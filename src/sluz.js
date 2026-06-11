@@ -45,7 +45,6 @@ export default class Sluz {
     });
     this.modifiers.set('trim', s => String(s).trim());
     this.modifiers.set('replace', (s, search, replacement) => String(s).replaceAll(search, replacement));
-    this.modifiers.set('split', (s, sep) => String(s).split(sep));
     this.modifiers.set('length', s => String(s).length);
     this.modifiers.set('join', (arr, sep = ',') => Array.prototype.join.call(arr, sep));
     this.modifiers.set('first', arr => Array.isArray(arr) ? arr[0] : String(arr)[0]);

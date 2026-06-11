@@ -64,7 +64,6 @@ Modifiers transform variable output using pipe (`|`) syntax. Static arguments fo
 | `length`   | String length                            | `{$name\|length}`                            |
 | `substr`   | Substring `(start[, length])`            | `{$name\|substr:0,3}`                        |
 | `replace`  | Replace all occurrences                  | `{$name\|replace:"old","new"}`               |
-| `split`    | Split string by separator                | `{$csv\|split:","}`                          |
 | `join`     | Join array with separator                | `{$items\|join:", "}`                        |
 | `count`    | Count array keys / object keys / truthy  | `{$items\|count}`                            |
 | `first`    | First element of array / first character | `{$items\|first}`                            |

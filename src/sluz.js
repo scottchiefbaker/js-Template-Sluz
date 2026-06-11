@@ -56,10 +56,12 @@ export default class Sluz {
    * @param {*} [second]
    */
   assign(first, second) {
+    // Batch-assign: pass a single object to assign all its keys at once
     if (arguments.length === 1 && typeof first === 'object' && !Array.isArray(first) && first !== null) {
       for (const [k, v] of Object.entries(first)) {
         this.tplVars[k] = v;
       }
+    // Key-value pair: assign('name', 'value')
     } else if (arguments.length % 2 === 0) {
       for (let i = 0; i < arguments.length; i += 2) {
         this.tplVars[arguments[i]] = arguments[i + 1];
@@ -71,6 +73,9 @@ export default class Sluz {
     this.modifiers.set(name, fn);
   }
 
+  // This is where all the real work is done.
+  // We break the input string into blocks based on { }
+  // Then we loop through those blocks doing variable replacement as needed
   parse(str) {
     this._sourceStr = str;
     const blocks = this._getBlocks(str);
@@ -85,12 +90,15 @@ export default class Sluz {
    * @param {string} str
    * @returns {Array<[string, number]>}
    */
+  // Split a template string into an array of [text, endIndex] blocks,
+  // separating literal HTML from {tags} and handling nested if/foreach/literal.
   _getBlocks(str) {
     const slen = str.length;
     let start = 0;
     let i;
     const blocks = [];
 
+    // Fast-forward to the first '{' so we don't scan plain text char-by-char
     let z = str.indexOf('{');
     if (z < 0) z = slen;
 
@@ -99,6 +107,7 @@ export default class Sluz {
       let isOpen = char === '{';
       const isClosed = char === '}';
 
+      // Skip plain-text runs in one jump instead of character-by-character
       if (!isOpen && !isClosed) {
         const nextOpen = str.indexOf('{', i);
         const nextClose = str.indexOf('}', i);
@@ -111,6 +120,7 @@ export default class Sluz {
       const hasLen = start !== i;
       let isComment = false;
 
+      // Disambiguate '{' used in template tags from literal '{' surrounded by whitespace
       if (isOpen) {
         const prevC = i > 0 ? str[i - 1] : ' ';
         const nextC = i + 1 < slen ? str[i + 1] : ' ';
@@ -119,13 +129,16 @@ export default class Sluz {
         if (nextC === '*') isComment = true;
       }
 
+      // Push the text before this opening tag as a literal block
       if (isOpen && hasLen) {
         blocks.push([str.slice(start, i), i]);
         start = i;
       } else if (isClosed) {
+        // Find the full tag (or block) from start to the matching '}'
         const len = i - start + 1;
         let block = str.slice(start, start + len);
         const openTagMatch = block.match(/^\{(if|foreach|literal)\b/);
+        // For block tags (if/foreach/literal), scan for the matching close tag
         if (openTagMatch) {
           const ot = openTagMatch[1];
           const closeTag = `{/${ot}}`;
@@ -147,6 +160,7 @@ export default class Sluz {
         i = start;
       }
 
+      // Handle {* comment *} — swallow everything up to the closing *}
       if (isComment) {
         const end = this._findEndingTag(str.slice(start), '{*', '*}');
         if (end < 0) {
@@ -158,10 +172,13 @@ export default class Sluz {
       }
     }
 
+    // Push any remaining text after the last tag as a literal block
     if (start < slen) {
       blocks.push([str.slice(start), i]);
     }
 
+    // Strip the leading newline from blocks that follow {if}/{for} so the
+    // rendered HTML doesn't have an extra blank line after control tags
     let prevIsIf = false;
     for (let bi = 0; bi < blocks.length; bi++) {
       const bstr = blocks[bi][0];
@@ -182,6 +199,9 @@ export default class Sluz {
     return blocks;
   }
 
+  // Walk the parsed blocks and reassemble the final HTML.
+  // Blocks starting with '{' are template tags processed by _processBlock;
+  // everything else is literal text appended as-is.
   _processBlocks(blocks) {
     let html = '';
     for (const x of blocks) {
@@ -196,33 +216,42 @@ export default class Sluz {
     return html;
   }
 
+  // Dispatch a single {tag} string to the appropriate handler.
+  // Tries each known tag type in order: variable, if, foreach, literal,
+  // expression, then falls back to an error for unclosed tags.
   _processBlock(str, charPos) {
     this.charPos = charPos;
 
+    // {$var} or {$var|modifier:param}
     const varMatch = str.match(/^\{\$([\w|.'";\t :,!@#%^&*?_\-/]+)\}$/);
     if (str.startsWith('{$') && varMatch) {
       return this._variableBlock(varMatch[1]);
     }
 
+    // {if condition}...{/if}
     if (str.startsWith('{if ') && str.endsWith('{/if}')) {
       return this._ifBlock(str);
     }
 
+    // {foreach $array as $key => $value}...{/foreach}
     const foreachMatch = str.match(/^\{foreach (\$\w[\w.]*) as \$(\w+)(?: => \$(\w+))?\}([\s\S]*)\{\/foreach\}$/);
     if (str.startsWith('{foreach ') && foreachMatch) {
       return this._foreachBlock(foreachMatch[1], foreachMatch[2], foreachMatch[3], foreachMatch[4]);
     }
 
+    // {literal}raw content{/literal} — returned verbatim
     if (str.startsWith('{literal}')) {
       const m = str.match(/^\{literal\}([\s\S]*)\{\/literal\}$/);
       if (m) return m[1];
     }
 
+    // Fallback: treat anything inside { } as an expression
     const exprMatch = str.match(/^\{(.+)}$/s);
     if (exprMatch) {
       return this._expressionBlock(str, exprMatch[1]);
     }
 
+    // No closing brace — this is a parse error
     if (!str.endsWith('}')) {
       const [line, col] = this._getCharLocation(this.charPos);
       throw new SluzError(`Unclosed tag <code>${str}</code> on line #${line}`, 45821);
@@ -287,7 +316,11 @@ export default class Sluz {
     return '';
   }
 
+  // Evaluate an {if}/{elseif}/{else} chain.
+  // Simple blocks (no {else}) use a fast regex path; complex ones go through
+  // tokenization. The first matching condition renders its payload.
   _ifBlock(str) {
+    // True when the block has no {else} or {elseif}, so we can use a simple regex
     const isSimple = !str.includes('{else', 7);
     let rules = [];
 
@@ -438,15 +471,25 @@ export default class Sluz {
     return undefined;
   }
 
+  // Safely evaluate a template expression string at runtime.
+  // Returns [value, 0] on success or [undefined, -1] on error.
   _peval(str) {
+    // Smarty uses === for equality but JS triple-equals would reject
+    // different types, so soften it to == for template compatibility
     str = str.replace(/===/g, '==');
+	// Quick path: if the expression is a plain literal or simple reference,
+    // resolve it without invoking the Function constructor
     const opt = this._microOptimize(str);
     if (opt !== undefined) return [opt, 0];
 
+    // Convert template variable references ($foo) to __S_prefix_foo lookups
     const code = this._convertVars(str);
+    // Build a Function that receives the variable scope object and any
+    // registered custom modifier functions as parameters
     const fnNames = [...this.modifiers.keys()];
     const fn = new Function('__S', ...fnNames, `"use strict"; return (${code})`);
 
+    // Build the scope object with prefixed keys so $foo maps to __S_foo
     const __S = {};
     for (const [k, v] of Object.entries(this.tplVars)) {
       __S[`${this.varPrefix}_${k}`] = v;

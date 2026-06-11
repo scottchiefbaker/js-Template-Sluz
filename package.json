@@ -1,0 +1,30 @@
+{
+  "name": "template-sluz",
+  "version": "0.9.1",
+  "description": "A minimalistic JavaScript templating engine with Smarty-like syntax",
+  "type": "module",
+  "main": "./src/sluz.js",
+  "exports": {
+    ".": "./src/sluz.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "template",
+    "smarty",
+    "templating",
+    "sluz"
+  ],
+  "license": "GPL-3.0-or-later",
+  "devDependencies": {
+    "vitest": "^3.2.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

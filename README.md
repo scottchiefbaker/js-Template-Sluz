@@ -16,13 +16,11 @@ import Sluz from 'template-sluz';
 const sluz = new Sluz();
 sluz.assign('name', 'Scott');
 sluz.assign('items', ['apple', 'banana', 'cherry']);
-sluz.assign('user', { first: 'Scott', last: 'Baker', age: 43 });
+sluz.assign('user', { first: 'Jason', last: 'Doolis', age: 43 });
 
-console.log(sluz.parse('Hello {$name}'));
-// Hello Scott
+console.log(sluz.parse('Hello {$name}')); // Hello Scott
 
-console.log(sluz.parse('{$user.first} {$user.last}'));
-// Scott Baker
+console.log(sluz.parse('{$user.first} {$user.last}')); // Jason Doolis
 ```
 
 ---
@@ -46,7 +44,7 @@ Accepts key/value pairs or a single object:
 ```js
 sluz.assign('color', 'blue');
 sluz.assign('size', ['small', 'medium', 'large']);
-sluz.assign({ color: 'yellow', age: 43 });
+sluz.assign('info', { color: 'yellow', age: 43 });
 ```
 
 ---
@@ -190,7 +188,7 @@ Creates a new template engine instance.
 
 Sets template variables. Accepts:
 - Key/value pairs: `sluz.assign('name', 'Scott')`
-- A single object: `sluz.assign({ name: 'Scott', age: 43 })`
+- A single object: `sluz.assign('info', { name: 'Scott', age: 43 })`
 
 ### `registerModifier(name, fn)`
 

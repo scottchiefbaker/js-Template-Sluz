@@ -65,8 +65,8 @@ sluzTest('{3}', '3', 'Basic #10 - Number literal');
 sluzTest('{"Scott"}', 'Scott', 'Basic #11 - String literal');
 sluzTest('{$x}', '7', 'Basic #12 - Single Character variable');
 
-test.skip('Basic #13 - Array Lookup - PHP Syntax (PHP bracket syntax)', () => {});
-test.skip('Basic #14 - Hash Lookup - PHP Syntax (PHP bracket syntax)', () => {});
+//test.skip('Basic #13 - Array Lookup - PHP Syntax (PHP bracket syntax)', () => {});
+//test.skip('Basic #14 - Hash Lookup - PHP Syntax (PHP bracket syntax)', () => {});
 
 // Default values
 sluzTest('{$last|default:\'123\'}', 'Baker', 'Basic #15 - Default - Not Used');
@@ -90,8 +90,7 @@ sluzTest('{$cust.foo|default:\'Jason\'}', 'Jason', 'Basic #23 - Hash with defaul
 sluzTest('{$array}', 'ARRAY', 'Basic #24 - Array used as a scalar');
 sluzTest('{$first|substr:2}', 'ott', 'Basic #26 - PHP function with one param');
 sluzTest('{$first|substr:2,2}', 'ot', 'Basic #27 - PHP function with two params');
-
-test.skip('Basic #28 - Negated hash lookup (not implemented)', () => {});
+sluzTest('{if !$cust.age}unknown{else}{$age}{/if}', 'unknown'    , 'Basic #28 - Negated hash lookup');
 
 test('Basic #29 - Simple math that returns floating point', () => {
   const got = sluz.parse('{1.1234 + 2.3456}');
@@ -104,9 +103,7 @@ test('Basic #29 - Simple math that returns floating point', () => {
 sluzTest('{$word|truncate:3}', 'cRa', 'Custom function #1 - Modifier with param');
 sluzTest('{$last|truncate:4|truncate:2}', 'Ba', 'Custom function #2 - Two modifiers with params');
 sluzTest('{$y|join_comma}', '2, 4, 6', 'Custom function #3 - Function with default param');
-
-test.skip('Custom function #4 - join_comma with numeric param', () => {});
-
+sluzTest('{$y|join_comma:9}' , '29496', 'Custom function #4 - Function with integer param');
 sluzTest('{$y|join_comma:"*"}', '2*4*6', 'Custom function #5 - Function with string param');
 sluzTest('{$y|join_comma:"|"}', '2|4|6', 'Custom function #6 - Function with string param pipe');
 sluzTest('{$y|join_comma:","}', '2,4,6', 'Custom function #7 - Function with string param pipe comma');

@@ -49,6 +49,33 @@ sluz.assign('info', { color: 'yellow', age: 43 });
 
 ---
 
+## API Reference
+
+### `new Sluz()`
+
+Creates a new template engine instance.
+
+### `assign(key, value)` / `assign(object)`
+
+Sets template variables. Accepts:
+- Key/value pairs: `sluz.assign('name', 'Scott')`
+- A single object: `sluz.assign('info', { name: 'Scott', age: 43 })`
+
+### `registerModifier(name, fn)`
+
+Registers a custom modifier function. The function receives the variable value as the first argument, followed by any user-supplied arguments from the template.
+
+```js
+sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
+// Template: {$name|truncate:3}
+```
+
+### `parse(string)`
+
+Parses a template string with the current variables and returns the rendered output.
+
+---
+
 ## Modifiers
 
 Modifiers transform variable output using pipe (`|`) syntax. Static arguments follow a colon (`:`), multiple arguments are comma-separated.
@@ -170,33 +197,6 @@ sluz.parse('{literal}{$this} is {not} parsed{/literal}');
 sluz.parse('before{* this is hidden *}after');   // beforeafter
 {* {* nested *} *}                                 // (stripped)
 ```
-
----
-
-## API Reference
-
-### `new Sluz()`
-
-Creates a new template engine instance.
-
-### `assign(key, value)` / `assign(object)`
-
-Sets template variables. Accepts:
-- Key/value pairs: `sluz.assign('name', 'Scott')`
-- A single object: `sluz.assign('info', { name: 'Scott', age: 43 })`
-
-### `registerModifier(name, fn)`
-
-Registers a custom modifier function. The function receives the variable value as the first argument, followed by any user-supplied arguments from the template.
-
-```js
-sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
-// Template: {$name|truncate:3}
-```
-
-### `parse(string)`
-
-Parses a template string with the current variables and returns the rendered output.
 
 ---
 

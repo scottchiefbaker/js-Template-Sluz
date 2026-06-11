@@ -1,4 +1,4 @@
-# Template::Sluz
+# Sluz templating system
 
 A minimalistic JavaScript templating engine with Smarty-like syntax. Zero dependencies, ESM-only.
 

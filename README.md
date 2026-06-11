@@ -63,16 +63,12 @@ Modifiers transform variable output using pipe (`|`) syntax. Static arguments fo
 | `trim`     | Trim whitespace                          | `{$name\|trim}`                              |
 | `length`   | String length                            | `{$name\|length}`                            |
 | `substr`   | Substring `(start[, length])`            | `{$name\|substr:0,3}`                        |
-| `slice`    | Slice `(start[, end])`                   | `{$name\|slice:1,-1}`                        |
 | `replace`  | Replace all occurrences                  | `{$name\|replace:"old","new"}`               |
-| `repeat`   | Repeat string `n` times                  | `{$name\|repeat:3}`                          |
 | `split`    | Split string by separator                | `{$csv\|split:","}`                          |
 | `join`     | Join array with separator                | `{$items\|join:", "}`                        |
 | `count`    | Count array keys / object keys / truthy  | `{$items\|count}`                            |
 | `first`    | First element of array / first character | `{$items\|first}`                            |
 | `last`     | Last element of array / last character   | `{$items\|last}`                             |
-| `reverse`  | Reverse array (returns new copy)         | `{$items\|reverse}`                          |
-| `sort`     | Sort array (returns new copy)            | `{$items\|sort}`                             |
 
 ### Default values
 

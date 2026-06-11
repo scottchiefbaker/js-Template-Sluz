@@ -43,17 +43,13 @@ export default class Sluz {
       start = Number(start);
       return len !== undefined ? s.slice(start, start + Number(len)) : s.slice(start);
     });
-    this.modifiers.set('slice', (s, start, end) => String(s).slice(start, end));
     this.modifiers.set('trim', s => String(s).trim());
     this.modifiers.set('replace', (s, search, replacement) => String(s).replaceAll(search, replacement));
     this.modifiers.set('split', (s, sep) => String(s).split(sep));
-    this.modifiers.set('repeat', (s, n) => String(s).repeat(n));
     this.modifiers.set('length', s => String(s).length);
     this.modifiers.set('join', (arr, sep = ',') => Array.prototype.join.call(arr, sep));
     this.modifiers.set('first', arr => Array.isArray(arr) ? arr[0] : String(arr)[0]);
     this.modifiers.set('last', arr => Array.isArray(arr) ? arr[arr.length - 1] : String(arr).slice(-1));
-    this.modifiers.set('reverse', arr => [...arr].reverse());
-    this.modifiers.set('sort', arr => [...arr].sort());
   }
 
   /**

@@ -15,12 +15,22 @@ import Sluz from 'template-sluz';
 
 const sluz = new Sluz();
 sluz.assign('name', 'Scott');
-sluz.assign('items', ['apple', 'banana', 'cherry']);
 sluz.assign('user', { first: 'Jason', last: 'Doolis', age: 43 });
 
 console.log(sluz.parse('Hello {$name}')); // Hello Scott
-
 console.log(sluz.parse('{$user.first} {$user.last}')); // Jason Doolis
+```
+
+---
+
+## Browser Usage
+
+Load Sluz in the browser with `<script type="module">`.
+
+```html
+<script type="module">
+    import Sluz from './path/to/sluz.js';
+</script>
 ```
 
 ---

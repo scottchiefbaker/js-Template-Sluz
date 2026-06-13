@@ -88,7 +88,7 @@ sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
 
 ## 🔧 Modifiers
 
-Modifiers transform variable output using pipe (`|`) syntax. Static arguments follow a colon (`:`), multiple arguments are comma-separated.
+Modifiers transform variable output using pipe (`|`) syntax. Arguments follow a colon (`:`), multiple arguments are comma-separated.
 
 ### Built-in modifiers
 

@@ -222,8 +222,15 @@ export default class Sluz {
   _processBlock(str, charPos) {
     this.charPos = charPos;
 
-    // {$var} or {$var|modifier:param}
-    const varMatch = str.match(/^\{\$([\w|.'";\t :,!@#%^&*?_\-/]+)\}$/);
+    // {$var} or {$var|modifier:param} or {$var|modifier:$param}
+    let varMatch;
+    if (str.includes('|')) {
+      // Variable with modifiers - allow $ in content for variable parameters
+      varMatch = str.match(/^\{\$([\w|.'";\t :,!@#%^&*?_\-/$]+)\}$/);
+    } else {
+      // Simple variable - don't allow $ to avoid matching expressions like {$a * $b}
+      varMatch = str.match(/^\{\$([\w|.'";\t :,!@#%^&*?_\-/]+)\}$/);
+    }
     if (str.startsWith('{$') && varMatch) {
       return this._variableBlock(varMatch[1]);
     }

@@ -30,6 +30,10 @@ Load Sluz in the browser with `<script type="module">`.
 ```html
 <script type="module">
     import Sluz from './path/to/sluz.js';
+    const sluz = new Sluz();
+
+    sluz.assign('user', { name: 'Alice', role: 'admin' });
+    document.getElementById('body').innerHTML = sluz.parse("Welcome {$user.name} you are {$user.role}");
 </script>
 ```
 

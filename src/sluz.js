@@ -245,6 +245,11 @@ export default class Sluz {
       if (m) return m[1];
     }
 
+    // { foo } — whitespace-padded content without expression markers, return verbatim
+    if (/^\{\s+.*\s+\}$/.test(str) && !/["\d\$\(]/.test(str)) {
+      return str;
+    }
+
     // Fallback: treat anything inside { } as an expression
     const exprMatch = str.match(/^\{(.+)}$/s);
     if (exprMatch) {

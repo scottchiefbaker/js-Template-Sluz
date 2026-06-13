@@ -205,8 +205,9 @@ sluzTest('{foreach $array as $x}{$x}{$__FOREACH_INDEX}{/foreach}', 'one0two1thre
 // -------------------------------------------------------------------
 // Plain text tests
 // -------------------------------------------------------------------
-sluzTest('Scott', 'Scott', 'Plain text #1 - Static text');
-sluzTest('<div>Scott</div>', '<div>Scott</div>', 'Plain text #2 - HTML');
+sluzTest('Scott'                      , 'Scott'                      , 'Plain text #1 - Static text');
+sluzTest('<div>Scott</div>'           , '<div>Scott</div>'           , 'Plain text #2 - HTML');
+sluzTest('function foo() { return 3 }', 'function foo() { return 3 }', 'Plain text #3 - Function definition');
 
 // -------------------------------------------------------------------
 // Bad block tests
@@ -220,25 +221,37 @@ test('Bad block #2 - {word}', () => {
 // -------------------------------------------------------------------
 // Literal tests
 // -------------------------------------------------------------------
-sluzTest('{literal}{{/literal}', '{', 'Literal #1 - {');
-sluzTest('{literal}}{/literal}', '}', 'Literal #2 - }');
-sluzTest('{literal}{}{/literal}', '{}', 'Literal #3 - Literal + {}');
-sluzTest('{literal}{foreach}{/literal}', '{foreach}', 'Literal #4 - {literal}');
+sluzTest('{literal}{{/literal}'                  , '{'                  , 'Literal #1 - {');
+sluzTest('{literal}}{/literal}'                  , '}'                  , 'Literal #2 - }');
+sluzTest('{literal}{}{/literal}'                 , '{}'                 , 'Literal #3 - Literal + {}');
+sluzTest('{literal}{foreach}{/literal}'          , '{foreach}'          , 'Literal #4 - {literal}');
 sluzTest('{literal}{literal}{/literal}{/literal}', '{literal}{/literal}', 'Literal #5 - Meta literal');
-sluzTest(' { ', ' { ', 'Literal #6 - { with whitespace');
-sluzTest('{}', '{}', 'Literal #7 - Raw {}');
+sluzTest(' { '                                   , ' { '                , 'Literal #6 - { with whitespace');
+sluzTest('{}'                                    , '{}'                 , 'Literal #7 - Raw {}');
+
+// -------------------------------------------------------------------
+// Whitespace-padded brackets tests
+// -------------------------------------------------------------------
+sluzTest('{ foo }'        , '{ foo }'        , 'Whitespace-padded #1 - Simple text');
+sluzTest('{  bar  }'      , '{  bar  }'      , 'Whitespace-padded #2 - Multiple spaces');
+sluzTest('{ hello world }', '{ hello world }', 'Whitespace-padded #3 - Multiple words');
+sluzTest('{ (1+2) }'      , '3'              , 'Whitespace-padded #4 - Expression with parens');
+sluzTest('{ 1 + 2 }'      , '3'              , 'Whitespace-padded #5 - Expression with number');
+sluzTest('{ $x }'         , '7'              , 'Whitespace-padded #6 - Variable');
+sluzTest('{ "hello" }'    , 'hello'          , 'Whitespace-padded #7 - String literal');
+sluzTest('{ $x + 1 }'     , '8'              , 'Whitespace-padded #8 - Expression with variable');
 
 // -------------------------------------------------------------------
 // Whitespace input/output
 // -------------------------------------------------------------------
-sluzTest("{$x}{$x}", '77', 'Whitespace input/output #1');
-sluzTest("{$x} {$x}", '7 7', 'Whitespace input/output #2');
-sluzTest("{$x}\n{$x}", "7\n7", 'Whitespace input/output #3');
-sluzTest("{foreach \$y as \$x}{\$x}{/foreach}", '246', 'Whitespace input/output #4');
-sluzTest("{foreach \$y as \$x}\n{\$x}\n{/foreach}", "2\n4\n6\n", 'Whitespace input/output #5');
-sluzTest("{if \$x}{\$x}{/if}", '7', 'Whitespace input/output #6');
-sluzTest("{if \$x}\n{\$x}\n{/if}", "7\n", 'Whitespace input/output #7');
-sluzTest("{foreach \$y as \$x}\n{\$x}\n{/foreach}\nlast", "2\n4\n6\nlast", 'Whitespace input/output #8');
+sluzTest("{$x}{$x}"                                     , '77'                 , 'Whitespace input/output #1');
+sluzTest("{$x} {$x}"                                    , '7 7'                , 'Whitespace input/output #2');
+sluzTest("{$x}\n{$x}"                                   , "7\n7"               , 'Whitespace input/output #3');
+sluzTest("{foreach \$y as \$x}{\$x}{/foreach}"          , '246'                , 'Whitespace input/output #4');
+sluzTest("{foreach \$y as \$x}\n{\$x}\n{/foreach}"      , "2\n4\n6\n"          , 'Whitespace input/output #5');
+sluzTest("{if \$x}{\$x}{/if}"                           , '7'                  , 'Whitespace input/output #6');
+sluzTest("{if \$x}\n{\$x}\n{/if}"                       , "7\n"                , 'Whitespace input/output #7');
+sluzTest("{foreach \$y as \$x}\n{\$x}\n{/foreach}\nlast", "2\n4\n6\nlast"      , 'Whitespace input/output #8');
 sluzTest("{foreach \$array as \$x}{\$x} {/foreach}\nEND", "one two three \nEND", 'Whitespace input/output #9');
 
 // -------------------------------------------------------------------

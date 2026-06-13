@@ -180,9 +180,9 @@ Available inside loops:
 
 ```js
 {foreach $items as $x}
-  {if $__FOREACH_FIRST}>>> {/if}
-  {$x}
-  {if $__FOREACH_LAST} <<<{/if}
+    {if $__FOREACH_FIRST}>>> {/if}
+    {$x}
+    {if $__FOREACH_LAST} <<<{/if}
 {/foreach}
 ```
 
@@ -218,10 +218,10 @@ Syntax errors throw `SluzError` with a descriptive message and error code:
 import Sluz, { SluzError } from 'template-sluz';
 
 try {
-  sluz.parse('{foo');
+    sluz.parse('{foo');
 } catch (e) {
-  console.log(e.code);     // 45821
-  console.log(e.message);  // Template::Sluz error #45821: Unclosed tag ...
+    console.log(e.code);     // 45821
+    console.log(e.message);  // Template::Sluz error #45821: Unclosed tag ...
 }
 ```
 

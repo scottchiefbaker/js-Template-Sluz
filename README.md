@@ -42,9 +42,9 @@ Variables are inserted with `{$varname}`. Dotted paths resolve nested objects an
 ```js
 sluz.assign('person', { name: { first: 'Jane' }, colors: ['red', 'green'] });
 
-sluz.parse('{$person.name.first}');           // Jane
-sluz.parse('{$person.colors.0}');             // red
-sluz.parse('{$missing}');                     // '' (empty string)
+sluz.parse('{$person.name.first}'); // Jane
+sluz.parse('{$person.colors.0}');   // red
+sluz.parse('{$missing}');           // '' (empty string)
 ```
 
 ### assign()
@@ -52,9 +52,9 @@ sluz.parse('{$missing}');                     // '' (empty string)
 Accepts key/value pairs or a single object:
 
 ```js
-sluz.assign('color', 'blue');
-sluz.assign('size', ['small', 'medium', 'large']);
-sluz.assign('info', { color: 'yellow', age: 43 });
+sluz.assign('color', 'blue');                      // Scalar
+sluz.assign('size', ['small', 'medium', 'large']); // Array
+sluz.assign('info', { color: 'yellow', age: 43 }); // Hash
 ```
 
 ---
@@ -71,6 +71,10 @@ Sets template variables. Accepts:
 - Key/value pairs: `sluz.assign('name', 'Scott')`
 - A single object: `sluz.assign('info', { name: 'Scott', age: 43 })`
 
+### `parse(string)`
+
+Parses a template string with the current variables and returns the rendered output.
+
 ### `registerModifier(name, fn)`
 
 Registers a custom modifier function. The function receives the variable value as the first argument, followed by any user-supplied arguments from the template.
@@ -79,10 +83,6 @@ Registers a custom modifier function. The function receives the variable value a
 sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
 // Template: {$name|truncate:3}
 ```
-
-### `parse(string)`
-
-Parses a template string with the current variables and returns the rendered output.
 
 ---
 
@@ -193,8 +193,7 @@ Available inside loops:
 `{literal}...{/literal}` bypasses template parsing, outputting content verbatim:
 
 ```js
-sluz.parse('{literal}{$this} is {not} parsed{/literal}');
-// {$this} is {not} parsed
+sluz.parse('{literal}function foo() { .. }{/literal}');
 ```
 
 ---

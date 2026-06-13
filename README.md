@@ -201,11 +201,10 @@ sluz.parse('{literal}{$this} is {not} parsed{/literal}');
 
 ## 💬 Comments
 
-`{* ... *}` comments are stripped from output. Supports nesting:
+`{* ... *}` comments are stripped from output.
 
 ```js
-sluz.parse('before{* this is hidden *}after');   // beforeafter
-{* {* nested *} *}                                 // (stripped)
+sluz.parse('Kitten{* favorite animal *}'); // Kitten
 ```
 
 ---

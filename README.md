@@ -1,14 +1,14 @@
-# Sluz templating system
+# ⚡ Sluz templating system
 
 A minimalistic JavaScript templating engine with Smarty-like syntax. Zero dependencies, ESM-only.
 
-## Installation
+## 📦 Installation
 
 ```bash
 npm install template-sluz
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
 ```js
 import Sluz from 'template-sluz';
@@ -23,7 +23,7 @@ console.log(sluz.parse('{$user.first} {$user.last}')); // Jason Doolis
 
 ---
 
-## Browser Usage
+## 🌐 Browser Usage
 
 Load Sluz in the browser with `<script type="module">`.
 
@@ -35,7 +35,7 @@ Load Sluz in the browser with `<script type="module">`.
 
 ---
 
-## Variables
+## 📝 Variables
 
 Variables are inserted with `{$varname}`. Dotted paths resolve nested objects and arrays.
 
@@ -59,7 +59,7 @@ sluz.assign('info', { color: 'yellow', age: 43 });
 
 ---
 
-## API Reference
+## 📖 API Reference
 
 ### `new Sluz()`
 
@@ -86,7 +86,7 @@ Parses a template string with the current variables and returns the rendered out
 
 ---
 
-## Modifiers
+## 🔧 Modifiers
 
 Modifiers transform variable output using pipe (`|`) syntax. Static arguments follow a colon (`:`), multiple arguments are comma-separated.
 
@@ -131,7 +131,7 @@ sluz.parse('{$name|greet}');               // Howdy, Scott!
 
 ---
 
-## Expressions & Math
+## 🔢 Expressions & Math
 
 Wrap any JavaScript expression in braces for evaluation:
 
@@ -143,7 +143,7 @@ sluz.parse('{$count > 5}');                // true
 
 ---
 
-## Conditionals: `{if}` / `{elseif}` / `{else}` / `{/if}`
+## 🔀 Conditionals: `{if}` / `{elseif}` / `{else}` / `{/if}`
 
 ```js
 sluz.parse('{if $admin}Welcome admin{/if}');
@@ -155,7 +155,7 @@ Supports `&&`, `||`, `!`, parentheses, and comparison operators (`==`, `!=`, `<`
 
 ---
 
-## Loops: `{foreach}` / `{/foreach}`
+## 🔄 Loops: `{foreach}` / `{/foreach}`
 
 ```js
 // Simple iteration
@@ -188,7 +188,7 @@ Available inside loops:
 
 ---
 
-## Literal Blocks
+## 📄 Literal Blocks
 
 `{literal}...{/literal}` bypasses template parsing, outputting content verbatim:
 
@@ -199,7 +199,7 @@ sluz.parse('{literal}{$this} is {not} parsed{/literal}');
 
 ---
 
-## Comments
+## 💬 Comments
 
 `{* ... *}` comments are stripped from output. Supports nesting:
 
@@ -210,7 +210,7 @@ sluz.parse('before{* this is hidden *}after');   // beforeafter
 
 ---
 
-## Error Handling
+## ⚠️ Error Handling
 
 Syntax errors throw `SluzError` with a descriptive message and error code:
 

@@ -33,7 +33,9 @@ Load Sluz in the browser with `<script type="module">`.
     const sluz = new Sluz();
 
     sluz.assign('user', { name: 'Alice', role: 'admin' });
-    document.getElementById('body').innerHTML = sluz.parse("Welcome {$user.name} you are {$user.role}");
+
+    var elem       = document.getElementById('body');
+    elem.innerHTML = sluz.parse("Welcome {$user.name} you are {$user.role}");
 </script>
 ```
 

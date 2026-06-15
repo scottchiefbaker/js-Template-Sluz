@@ -1,3 +1,4 @@
+// Template engine error with a numeric error code
 class SluzError extends Error {
   constructor(msg, code) {
     super(`Template::Sluz error #${code}: ${msg}`);
@@ -11,11 +12,16 @@ const ESCAPE_RE = {
   '|': '\\|', '^': '\\^', '$': '\\$',
 };
 
+// Escape regex-special characters so the string can be used as a literal pattern
 function escapeRegex(s) {
   return s.replace(/[\\.*+?()\[\]{}|^$]/g, ch => ESCAPE_RE[ch]);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 export default class Sluz {
+  // Create a new Sluz template engine instance
   constructor() {
     this.tplVars = {};
     this.varPrefix = 'sluz_pfx';
@@ -26,6 +32,7 @@ export default class Sluz {
     this._registerBuiltins();
   }
 
+  // Register built-in modifier functions (count, ucfirst, upper, lower, etc.)
   _registerBuiltins() {
     this.modifiers.set('count', v => {
       if (Array.isArray(v)) return v.length;
@@ -51,10 +58,7 @@ export default class Sluz {
     this.modifiers.set('last', arr => Array.isArray(arr) ? arr[arr.length - 1] : String(arr).slice(-1));
   }
 
-  /**
-   * @param {string|Object} first
-   * @param {*} [second]
-   */
+  // Assign one or more template variables — key/value pair, multiple pairs, or batch object
   assign(first, second) {
     // Batch-assign: pass a single object to assign all its keys at once
     if (arguments.length === 1 && typeof first === 'object' && !Array.isArray(first) && first !== null) {
@@ -69,13 +73,12 @@ export default class Sluz {
     }
   }
 
+  // Register a custom modifier function for use with the | pipe syntax
   registerModifier(name, fn) {
     this.modifiers.set(name, fn);
   }
 
-  // This is where all the real work is done.
-  // We break the input string into blocks based on { }
-  // Then we loop through those blocks doing variable replacement as needed
+  // Parse a template string — tokenize into blocks then process each in sequence
   parse(str) {
     this._sourceStr = str;
     const blocks = this._getBlocks(str);
@@ -86,12 +89,7 @@ export default class Sluz {
   // Tokenizer
   // -------------------------------------------------------------------
 
-  /**
-   * @param {string} str
-   * @returns {Array<[string, number]>}
-   */
-  // Split a template string into an array of [text, endIndex] blocks,
-  // separating literal HTML from {tags} and handling nested if/foreach/literal.
+  // Split a template string into [text, endIndex] blocks, handling nested if/foreach/literal
   _getBlocks(str) {
     const slen = str.length;
     let start = 0;
@@ -199,9 +197,7 @@ export default class Sluz {
     return blocks;
   }
 
-  // Walk the parsed blocks and reassemble the final HTML.
-  // Blocks starting with '{' are template tags processed by _processBlock;
-  // everything else is literal text appended as-is.
+  // Walk parsed blocks: dispatch {tags} to _processBlock, append literal text
   _processBlocks(blocks) {
     let html = '';
     for (const x of blocks) {
@@ -216,9 +212,7 @@ export default class Sluz {
     return html;
   }
 
-  // Dispatch a single {tag} string to the appropriate handler.
-  // Tries each known tag type in order: variable, if, foreach, literal,
-  // expression, then falls back to an error for unclosed tags.
+  // Dispatch a {tag} to the right handler: variable, if, foreach, literal, expression
   _processBlock(str, charPos) {
     this.charPos = charPos;
 
@@ -276,6 +270,7 @@ export default class Sluz {
   // Block handlers
   // -------------------------------------------------------------------
 
+  // Resolve {$var} with optional pipe modifiers, dotted paths, and "default:" fallback
   _variableBlock(str) {
     const pipeParts = this._splitRespectingQuotes(str, '|');
     const key = pipeParts[0];
@@ -328,9 +323,7 @@ export default class Sluz {
     return '';
   }
 
-  // Evaluate an {if}/{elseif}/{else} chain.
-  // Simple blocks (no {else}) use a fast regex path; complex ones go through
-  // tokenization. The first matching condition renders its payload.
+  // Evaluate {if}/{elseif}/{else} — fast regex for simple blocks, tokenized for complex
   _ifBlock(str) {
     // True when the block has no {else} or {elseif}, so we can use a simple regex
     const isSimple = !str.includes('{else', 7);
@@ -359,6 +352,7 @@ export default class Sluz {
     return ret;
   }
 
+  // Process {foreach $arr as $k => $v}...{/foreach} with __FOREACH_FIRST/LAST/INDEX
   _foreachBlock(srcExpr, keyVar, valVar, payload) {
     const convSrc = this._convertVars(srcExpr);
     payload = this._ltrimOne(payload, '\n');
@@ -417,6 +411,7 @@ export default class Sluz {
     return ret;
   }
 
+  // Handle arbitrary {expression} by converting variables and evaluating
   _expressionBlock(str, inner) {
     if (!/["\d\$\(]/.test(str)) {
       const [line, col] = this._getCharLocation(this.charPos);
@@ -440,6 +435,7 @@ export default class Sluz {
   // Variable / eval engine
   // -------------------------------------------------------------------
 
+  // Convert $templateVar references to internal __S.prefix_var lookups for safe eval
   _convertVars(str) {
     str = String(str);
     if (!str.includes('$')) return str;
@@ -454,6 +450,7 @@ export default class Sluz {
     });
   }
 
+  // Fast-path resolution for literals, quoted strings, and simple var refs (avoids Function)
   _microOptimize(str) {
     if (/^-?\d+(?:\.\d+)?$/.test(str)) return str;
     if (!str.length) return undefined;
@@ -483,8 +480,7 @@ export default class Sluz {
     return undefined;
   }
 
-  // Safely evaluate a template expression string at runtime.
-  // Returns [value, 0] on success or [undefined, -1] on error.
+  // Safely evaluate a template expression at runtime — returns [value, 0] or [undefined, -1]
   _peval(str) {
     // Smarty uses === for equality but JS triple-equals would reject
     // different types, so soften it to == for template compatibility
@@ -519,6 +515,7 @@ export default class Sluz {
   // Helpers
   // -------------------------------------------------------------------
 
+  // Walk a dotted path into nested objects/arrays (e.g. "user.profile.name")
   _arrayDive(needle, haystack) {
     if (needle == null || haystack == null) return undefined;
 
@@ -544,11 +541,13 @@ export default class Sluz {
     return arr;
   }
 
+  // Strip a single leading character if it matches the given character
   _ltrimOne(str, char) {
     if (str && str[0] === char) return str.slice(1);
     return str;
   }
 
+  // Find the position of a matching close tag, accounting for nested open tags
   _findEndingTag(haystack, openTag, closeTag) {
     let pos = haystack.indexOf(closeTag);
     if (pos < 0) return -1;
@@ -574,10 +573,12 @@ export default class Sluz {
     return -1;
   }
 
+  // Split a string on {tag} boundaries into an array of tokens
   _getTokens(str) {
     return str.split(/({[^}]+})/).filter(t => t.length);
   }
 
+  // Check if a token is an if/elseif/else/close tag — returns condition, 1, or ''
   _isIfToken(str) {
     if (str === '{else}') return 1;
     if (str === '{/if}') return 1;
@@ -586,6 +587,7 @@ export default class Sluz {
     return '';
   }
 
+  // Extract [condition, payload] pairs from if-tokens, handling nested if-blocks
   _ifRulesFromTokens(toks) {
     const num = toks.length;
     let nested = 0;
@@ -642,6 +644,7 @@ export default class Sluz {
   // Quote-aware splitting
   // -------------------------------------------------------------------
 
+  // Split by delimiter, respecting single/double-quoted substrings
   _splitRespectingQuotes(str, delimiter) {
     const parts = [];
     let current = '';
@@ -668,6 +671,7 @@ export default class Sluz {
     return parts;
   }
 
+  // Find first colon outside quotes — used to split modifier name from params
   _findFirstColonOutsideQuotes(str) {
     let inQuote = null;
     for (let i = 0; i < str.length; i++) {
@@ -683,6 +687,7 @@ export default class Sluz {
     return -1;
   }
 
+  // Check if value is "nothing" (undefined, null, empty string — but not "0" or objects)
   _isNothing(v) {
     if (v === undefined || v === null) return true;
     if (typeof v === 'object') return false;
@@ -693,6 +698,7 @@ export default class Sluz {
   // Error handling
   // -------------------------------------------------------------------
 
+  // Convert a character index to [line, column] for error messages
   _getCharLocation(pos) {
     const str = this._sourceStr;
     if (pos < 0 || !str) return [-1, -1];

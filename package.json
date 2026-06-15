@@ -10,7 +10,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "minify src/sluz.js > src/sluz.min.js"
+    "build": "esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js"
   },
   "files": [
     "src"
@@ -23,12 +23,10 @@
   ],
   "license": "GPL-3.0-or-later",
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "minify": "^15.3.1"
   }
 }

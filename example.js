@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import Sluz from './src/sluz.js';
 
 const sluz = new Sluz();

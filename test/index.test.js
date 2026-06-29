@@ -375,3 +375,110 @@ sluzTest('{-5 + 10}', '5'       , 'Expression #1 - Negative number');
 sluzTest('{10 / 3}' , '/3\\.33/', 'Expression #2 - Division');
 sluzTest('{10 % 3}' , '1'       , 'Expression #3 - Modulo');
 
+// -------------------------------------------------------------------
+// Escape / noescape modifier tests
+// -------------------------------------------------------------------
+sluz.assign('xss', '<script>alert(1)</script>');
+sluz.assign('safe_html', '<b>bold</b>');
+sluz.assign('items', ['<a>', '<b>', '<c>']);
+
+sluzTest('{$xss|escape}'      , '&lt;script&gt;alert(1)&lt;/script&gt;', 'Escape #1 - XSS');
+sluzTest('{$first|escape}'    , 'Scott'                                , 'Escape #2 - Plain text');
+sluzTest('{$null|escape}'     , ''                                     , 'Escape #3 - Null');
+sluzTest('{$zero|escape}'     , '0'                                    , 'Escape #4 - Zero');
+sluzTest('{$empty_string|escape}', ''                                  , 'Escape #5 - Empty string');
+sluzTest('{$array|escape}'    , 'ARRAY'                                , 'Escape #6 - Array ref');
+sluzTest('{$cust|escape}'     , 'HASH'                                 , 'Escape #7 - Hash ref');
+sluzTest('{$xss|upper|escape}'   , '&lt;SCRIPT&gt;ALERT(1)&lt;/SCRIPT&gt;', 'Escape #8 - Chained upper then escape');
+sluzTest('{$xss|escape|upper}'   , '&LT;SCRIPT&GT;ALERT(1)&LT;/SCRIPT&GT;', 'Escape #9 - Chained escape then upper');
+sluzTest('{foreach $items as $x}{$x|escape}{/foreach}', '&lt;a&gt;&lt;b&gt;&lt;c&gt;', 'Escape #10 - Foreach with escape');
+
+// -------------------------------------------------------------------
+// Auto-escape mode tests
+// -------------------------------------------------------------------
+describe('auto_escape', () => {
+  const ae = new Sluz();
+  ae.assign('xss', '<script>alert(1)</script>');
+  ae.assign('safe_html', '<b>bold</b>');
+  ae.assign('plain', 'Scott');
+  ae.assign('x', 7);
+  ae.assign('flag', 1);
+  ae.assign('payload', '<img src=x>');
+  ae.assign('items', ['<a>', '<b>', '<c>']);
+  ae.setAutoEscape(true);
+
+  ae.assign('zero', 0);
+  ae.assign('null', null);
+  ae.assign('array', ['one', 'two', 'three']);
+  ae.assign('cust', { first: 'Scott', last: 'Baker' });
+  ae.assign('empty_string', '');
+
+  test('Auto-escape #1 - Plain var is escaped', () => {
+    expect(ae.parse('{$xss}')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+
+  test('Auto-escape #2 - Var with |escape, no double-escape', () => {
+    expect(ae.parse('{$xss|escape}')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+
+  test('Auto-escape #3 - Var with |noescape bypasses', () => {
+    expect(ae.parse('{$xss|noescape}')).toBe('<script>alert(1)</script>');
+  });
+
+  test('Auto-escape #4 - Safe HTML auto-escaped', () => {
+    expect(ae.parse('{$safe_html}')).toBe('&lt;b&gt;bold&lt;/b&gt;');
+  });
+
+  test('Auto-escape #5 - Safe HTML with |noescape', () => {
+    expect(ae.parse('{$safe_html|noescape}')).toBe('<b>bold</b>');
+  });
+
+  test('Auto-escape #6 - Chained |upper|noescape', () => {
+    expect(ae.parse('{$safe_html|upper|noescape}')).toBe('<B>BOLD</B>');
+  });
+
+  test('Auto-escape #7 - Chained |upper (auto-escaped)', () => {
+    expect(ae.parse('{$safe_html|upper}')).toBe('&lt;B&gt;BOLD&lt;/B&gt;');
+  });
+
+  test('Auto-escape #8 - Foreach with auto-escape', () => {
+    expect(ae.parse('{foreach $items as $x}{$x}{/foreach}')).toBe('&lt;a&gt;&lt;b&gt;&lt;c&gt;');
+  });
+
+  test('Auto-escape #9 - Foreach with |noescape', () => {
+    expect(ae.parse('{foreach $items as $x}{$x|noescape}{/foreach}')).toBe('<a><b><c>');
+  });
+
+  test('Auto-escape #10 - If block auto-escaped', () => {
+    expect(ae.parse('{if $flag}{$payload}{/if}')).toBe('&lt;img src=x&gt;');
+  });
+
+  test('Auto-escape #11 - If block with |noescape', () => {
+    expect(ae.parse('{if $flag}{$payload|noescape}{/if}')).toBe('<img src=x>');
+  });
+
+  test('Auto-escape #12 - Null var empty', () => {
+    expect(ae.parse('{$null}')).toBe('');
+  });
+
+  test('Auto-escape #13 - Zero preserved', () => {
+    expect(ae.parse('{$zero}')).toBe('0');
+  });
+
+  test('Auto-escape #14 - Array ref', () => {
+    expect(ae.parse('{$array}')).toBe('ARRAY');
+  });
+
+  test('Auto-escape #15 - Hash ref', () => {
+    expect(ae.parse('{$cust}')).toBe('HASH');
+  });
+
+  test('Auto-escape #16 - Empty string', () => {
+    expect(ae.parse('{$empty_string}')).toBe('');
+  });
+
+  test('Auto-escape #17 - Plain text unchanged', () => {
+    expect(ae.parse('{$plain}')).toBe('Scott');
+  });
+});
+

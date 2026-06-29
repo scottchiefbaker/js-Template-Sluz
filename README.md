@@ -81,6 +81,15 @@ Sets template variables. Accepts:
 
 Parses a template string with the current variables and returns the rendered output.
 
+### `setAutoEscape(bool)`
+
+Enables or disables automatic HTML escaping for all `{$var}` output. When enabled, every variable is escaped unless `|noescape` is explicitly used.
+
+```js
+sluz.setAutoEscape(true);
+sluz.parse('{$xss}'); // &lt;script&gt;...
+```
+
 ### `registerModifier(name, fn)`
 
 Registers a custom modifier function. The function receives the variable value as the first argument, followed by any user-supplied arguments from the template.
@@ -111,6 +120,8 @@ Modifiers transform variable output using pipe (`|`) syntax. Arguments follow a 
 | `count`    | Count array keys / object keys / truthy  | `{$items\|count}`                            |
 | `first`    | First element of array / first character | `{$items\|first}`                            |
 | `last`     | Last element of array / last character   | `{$items\|last}`                             |
+| `escape`   | HTML-encode `& < > " '`                  | `{$var\|escape}`                             |
+| `noescape` | Bypass auto-escaping (identity)          | `{$var\|noescape}`                           |
 
 ### Default values
 
@@ -126,6 +137,35 @@ sluz.parse('{$missing|default:"N/A"}');    // N/A
 
 ```js
 sluz.parse('{$name|upper|substr:0,2}');    // SC
+```
+
+### Auto-escaping
+
+Sluz can automatically HTML-escape all `{$var}` output to prevent cross-site scripting (XSS). Enable it with `setAutoEscape(true)`:
+
+```js
+sluz.setAutoEscape(true);
+sluz.assign('html', '<script>alert("xss")</script>');
+sluz.parse('{$html}');  // &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;
+```
+
+Per-variable opt-out with `|noescape`:
+
+```js
+sluz.parse('{$trusted_html|noescape}');  // raw HTML, not escaped
+```
+
+Explicit `|escape` still works and won't double-escape:
+
+```js
+sluz.parse('{$html|escape}');  // still single-escaped
+```
+
+Chaining with auto-escape: the auto-escape applies *after* all explicit modifiers run, so it won't interfere with transformations:
+
+```js
+sluz.parse('{$safe|upper}');  // uppercase then auto-escaped
+// <B> → &lt;B&gt;
 ```
 
 ### Custom modifiers

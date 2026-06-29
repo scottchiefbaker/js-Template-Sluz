@@ -20,6 +20,19 @@ function escapeRegex(s) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// HTML-encode the five characters that have special meaning in HTML: & < > " '
+function _escapeHtml(v) {
+  if (v === undefined || v === null) return '';
+  if (Array.isArray(v)) return 'ARRAY';
+  if (v && typeof v === 'object') return 'HASH';
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
 export default class Sluz {
   // Create a new Sluz template engine instance
   constructor() {
@@ -28,6 +41,7 @@ export default class Sluz {
     this.modifiers = new Map();
     this.charPos = -1;
     this._sourceStr = '';
+    this.auto_escape = false;
 
     this._registerBuiltins();
   }
@@ -56,6 +70,8 @@ export default class Sluz {
     this.modifiers.set('join', (arr, sep = ',') => Array.prototype.join.call(arr, sep));
     this.modifiers.set('first', arr => Array.isArray(arr) ? arr[0] : String(arr)[0]);
     this.modifiers.set('last', arr => Array.isArray(arr) ? arr[arr.length - 1] : String(arr).slice(-1));
+    this.modifiers.set('escape', _escapeHtml);
+    this.modifiers.set('noescape', v => v);
   }
 
   // Assign one or more template variables — key/value pair, multiple pairs, or batch object
@@ -75,7 +91,22 @@ export default class Sluz {
 
   // Register a custom modifier function for use with the | pipe syntax
   registerModifier(name, fn) {
+    if (name === 'escape' || name === 'noescape') {
+      const [line, col] = this._getCharLocation(this.charPos);
+      throw new SluzError(`Cannot override built-in modifier <code>${name}</code> on line #${line}`, 47204);
+    }
     this.modifiers.set(name, fn);
+  }
+
+  // Enable or disable automatic HTML escaping of all {$var} output
+  setAutoEscape(flag) {
+    this.auto_escape = !!flag;
+  }
+
+  // Internal escape gate: delegates to _escapeHtml when auto_escape is on
+  _esc(v) {
+    if (!this.auto_escape) return v;
+    return _escapeHtml(v);
   }
 
   // Parse a template string — tokenize into blocks then process each in sequence
@@ -291,10 +322,16 @@ export default class Sluz {
       } else {
         let pre = this._arrayDive(key, this.tplVars) ?? '';
         const parts = this._splitRespectingQuotes(modStr, '|');
+        let seenEscape = false;
+        let seenNoescape = false;
         for (const p of parts) {
           const colonIdx = this._findFirstColonOutsideQuotes(p);
           const func = colonIdx >= 0 ? p.slice(0, colonIdx) : p;
           const paramStr = colonIdx >= 0 ? p.slice(colonIdx + 1) : '';
+
+          if (func === 'escape') seenEscape = true;
+          if (func === 'noescape') seenNoescape = true;
+
           const params = [pre];
 
           if (paramStr.length) {
@@ -312,6 +349,9 @@ export default class Sluz {
           }
           pre = fn(...params);
         }
+        if (this.auto_escape && !seenNoescape && !seenEscape) {
+          pre = this._esc(pre);
+        }
         return pre;
       }
     }
@@ -319,7 +359,7 @@ export default class Sluz {
     const ret = this._arrayDive(str, this.tplVars);
     if (Array.isArray(ret)) return 'ARRAY';
     if (ret && typeof ret === 'object') return 'HASH';
-    if (ret != null) return ret;
+    if (ret != null) return this._esc(ret);
     return '';
   }
 

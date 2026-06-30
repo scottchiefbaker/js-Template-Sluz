@@ -25,17 +25,27 @@ console.log(sluz.parse('{$user.first} {$user.last}')); // Jason Doolis
 
 ## 🌐 Browser Usage
 
-Load Sluz in the browser with `<script type="module">`.
+Load Sluz from a CDN with a plain `<script>` tag (sets `window.Sluz`):
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/template-sluz/src/sluz.global.min.js"></script>
+<script>
+    const sluz = new Sluz();
+    sluz.assign('user', { name: 'Alice', role: 'admin' });
+
+    document.body.innerHTML = sluz.parse("Welcome {$user.name} you are {$user.role}");
+</script>
+```
+
+Or as an ES module import:
 
 ```html
 <script type="module">
-    import Sluz from './path/to/sluz.js';
+    import Sluz from './js/sluz.min.js';
     const sluz = new Sluz();
 
     sluz.assign('user', { name: 'Alice', role: 'admin' });
-
-    var elem       = document.getElementById('body');
-    elem.innerHTML = sluz.parse("Welcome {$user.name} you are {$user.role}");
+    document.body.innerHTML = sluz.parse("Welcome {$user.name} you are {$user.role}");
 </script>
 ```
 

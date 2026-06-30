@@ -10,9 +10,9 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js && esbuild src/sluz.js --minify --format=iife --global-name=Sluz --outfile=src/sluz.global.min.js",
+    "build": "esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js && esbuild src/sluz.global.js --bundle --minify --format=iife --outfile=src/sluz.global.min.js",
     "build:esm": "esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js",
-    "build:global": "esbuild src/sluz.js --minify --format=iife --global-name=Sluz --outfile=src/sluz.global.min.js"
+    "build:global": "esbuild src/sluz.global.js --bundle --minify --format=iife --outfile=src/sluz.global.min.js"
   },
   "files": [
     "src"

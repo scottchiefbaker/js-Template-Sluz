@@ -25,5 +25,6 @@ No lint, typecheck, or formatter configured.
 - Template errors throw `SluzError` with numeric `code` property (e.g. `45821` for unclosed tags)
 - `assign()` accepts key/value pairs or a single object batch-assign
 - Custom modifiers registered via `registerModifier(name, fn)` — first arg is the value, subsequent args come from template `:` params
+- Alternate delimiters via `set_delimiters(left, right)` — both must be single, distinct chars; cache rebuilds automatically
 - `$__FOREACH_FIRST`, `$__FOREACH_LAST`, `$__FOREACH_INDEX` are reserved loop variables
 - `default:` modifier checks `_isNothing()` (undefined/null/empty string, but not `0` or objects)

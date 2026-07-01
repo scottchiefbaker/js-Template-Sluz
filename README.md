@@ -91,6 +91,27 @@ Sets template variables. Accepts:
 
 Parses a template string with the current variables and returns the rendered output.
 
+### `set_delimiters(left, right)`
+
+Changes the tag delimiters from the default `{`/`}` to any other single-character pair. Both arguments must be strings of exactly length 1 and must be different characters.
+
+```js
+sluz.set_delimiters('[', ']');
+sluz.parse('[$name]'); // resolves {$name}
+
+sluz.set_delimiters('{', '}'); // restore defaults
+```
+
+All tag types work with any delimiter pair: variables, modifiers, if/elseif/else, foreach, literal, comments, and expression blocks.
+
+```js
+sluz.set_delimiters('[', ']');
+sluz.assign('items', ['a', 'b', 'c']);
+
+sluz.parse('[* loop through items *][foreach $items as $x][$x] [/foreach]');
+// a b c
+```
+
 ### `setAutoEscape(bool)`
 
 Enables or disables automatic HTML escaping for all `{$var}` output. When enabled, every variable is escaped unless `|noescape` is explicitly used.

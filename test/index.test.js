@@ -482,3 +482,182 @@ describe('auto_escape', () => {
   });
 });
 
+// -------------------------------------------------------------------
+// Alternate delimiter tests
+// -------------------------------------------------------------------
+describe('alternate delimiters', () => {
+  test('Alt #1 - Simple variable with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('first', 'Scott');
+    expect(s.parse('[$first]')).toBe('Scott');
+  });
+
+  test('Alt #2 - Modifier with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('animal', 'kitten');
+    expect(s.parse('[$animal|upper]')).toBe('KITTEN');
+  });
+
+  test('Alt #3 - Chained modifiers with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('word', 'hello');
+    expect(s.parse('[$word|lower|ucfirst]')).toBe('Hello');
+  });
+
+  test('Alt #4 - If block with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('debug', 1);
+    expect(s.parse('[if $debug]DEBUG[/if]')).toBe('DEBUG');
+  });
+
+  test('Alt #5 - If/else with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('debug', 0);
+    expect(s.parse('[if $debug]YES[else]NO[/if]')).toBe('NO');
+  });
+
+  test('Alt #6 - Foreach with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('array', ['one', 'two', 'three']);
+    expect(s.parse('[foreach $array as $i][$i][/foreach]')).toBe('onetwothree');
+  });
+
+  test('Alt #7 - Comment with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    expect(s.parse('[* comment *]')).toBe('');
+  });
+
+  test('Alt #8 - Literal with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('first', 'Scott');
+    expect(s.parse('[literal][$first][/literal]')).toBe('[$first]');
+  });
+
+  test('Alt #9 - Multiple adjacent tags with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('a', 'X');
+    s.assign('b', 'Y');
+    s.assign('c', 'Z');
+    expect(s.parse('[$a][$b][$c]')).toBe('XYZ');
+  });
+
+  test('Alt #10 - Unclosed tag error with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('first', 'Scott');
+    expect(() => s.parse('[$first')).toThrow(/45821/);
+  });
+
+  test('Alt #11 - Restore default { } delimiters', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.set_delimiters('{', '}');
+    s.assign('first', 'Scott');
+    expect(s.parse('{$first}')).toBe('Scott');
+  });
+
+  test('Alt #12 - Angle bracket delimiters < >', () => {
+    const s = new Sluz();
+    s.set_delimiters('<', '>');
+    s.assign('first', 'Scott');
+    expect(s.parse('<$first>')).toBe('Scott');
+  });
+
+  test('Alt #13 - Expression block with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('x', 5);
+    expect(s.parse('[$x + 3]')).toBe('8');
+  });
+
+  test('Alt #14 - Multiple instances with different delimiters', () => {
+    const s1 = new Sluz();
+    s1.set_delimiters('[', ']');
+    s1.assign('first', 'Scott');
+    const s2 = new Sluz();
+    s2.assign('first', 'Jason');
+    expect(s1.parse('[$first]')).toBe('Scott');
+    expect(s2.parse('{$first}')).toBe('Jason');
+  });
+
+  test('Alt #15 - Regex-special delimiters [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('x', 42);
+    expect(s.parse('[$x]')).toBe('42');
+  });
+
+  test('Alt #16 - Parentheses delimiters ( )', () => {
+    const s = new Sluz();
+    s.set_delimiters('(', ')');
+    s.assign('first', 'Scott');
+    expect(s.parse('($first)')).toBe('Scott');
+  });
+
+  test('Alt #17 - If/elseif/else with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('x', 5);
+    expect(s.parse('[if $x > 10]BIG[elseif $x > 3]MED[else]SMALL[/if]')).toBe('MED');
+  });
+
+  test('Alt #18 - Nested foreach with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('array', ['a', 'b']);
+    expect(s.parse('[foreach $array as $i][foreach $array as $j]x[/foreach][/foreach]')).toBe('xxxx');
+  });
+
+  test('Alt #19 - Nested if with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    s.assign('debug', 1);
+    expect(s.parse('[if $debug][if $debug]INNER[/if][/if]')).toBe('INNER');
+  });
+
+  test('Alt #20 - Default modifier with [ ]', () => {
+    const s = new Sluz();
+    s.set_delimiters('[', ']');
+    expect(s.parse('[$bogus|default:"fallback"]')).toBe('fallback');
+  });
+});
+
+// -------------------------------------------------------------------
+// set_delimiters error tests
+// -------------------------------------------------------------------
+describe('set_delimiters errors', () => {
+  test('Error - multi-character left', () => {
+    const s = new Sluz();
+    expect(() => s.set_delimiters('{{', '}')).toThrow(/single characters/);
+  });
+
+  test('Error - multi-character right', () => {
+    const s = new Sluz();
+    expect(() => s.set_delimiters('{', '}}')).toThrow(/single characters/);
+  });
+
+  test('Error - identical delimiters', () => {
+    const s = new Sluz();
+    expect(() => s.set_delimiters('X', 'X')).toThrow(/different/);
+  });
+
+  test('Error - empty string left', () => {
+    const s = new Sluz();
+    expect(() => s.set_delimiters('', '}')).toThrow(/single characters/);
+  });
+
+  test('Error - non-string type', () => {
+    const s = new Sluz();
+    expect(() => s.set_delimiters(1, 2)).toThrow(/strings/);
+  });
+});
+

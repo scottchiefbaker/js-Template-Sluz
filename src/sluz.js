@@ -42,8 +42,11 @@ export default class Sluz {
     this.charPos = -1;
     this._sourceStr = '';
     this.auto_escape = false;
+    this.left_delim = '{';
+    this.right_delim = '}';
 
     this._registerBuiltins();
+    this._buildCache();
   }
 
   // Register built-in modifier functions (count, ucfirst, upper, lower, etc.)
@@ -74,6 +77,39 @@ export default class Sluz {
     this.modifiers.set('noescape', v => v);
   }
 
+  // Build cached tag strings and regex patterns from current delimiter state
+  _buildCache() {
+    const L = this.left_delim;
+    const R = this.right_delim;
+    const eL = escapeRegex(L);
+    const eR = escapeRegex(R);
+
+    this._close_if = L + '/if' + R;
+    this._close_foreach = L + '/foreach' + R;
+    this._else_tag = L + 'else' + R;
+    this._elseif_tag = L + 'elseif ';
+    this._comment_open = L + '*';
+    this._comment_close = '*' + R;
+
+    this._varReWithPipe = new RegExp(`^${eL}\\$([\\w|.'";\\t :,!@#%^&*?_\\-/$]+)${eR}$`);
+    this._varReSimple = new RegExp(`^${eL}\\$([\\w|.'";\\t :,!@#%^&*?_\\-/]+)${eR}$`);
+    this._foreachRe = new RegExp(`^${eL}foreach (\\$\\w[\\w.]*) as \\$(\\w+)(?: => \\$(\\w+))?${eR}([\\s\\S]*)${eL}\\/foreach${eR}$`);
+    this._literalRe = new RegExp(`^${eL}literal${eR}([\\s\\S]*)${eL}\\/literal${eR}$`);
+    this._catchAllRe = new RegExp(`^${eL}(.+)${eR}$`, 's');
+    this._tokenSplitRe = new RegExp(`(${eL}[^${eR}]+${eR})`);
+    this._openTagRe = new RegExp(`^${eL}(if|foreach|literal)\\b`);
+    this._closeTagRe = new RegExp(`${eL}\\/(\\w+)${eR}`);
+    this._ifStartRe = new RegExp(`^${eL}if\\b`);
+    this._forStartRe = new RegExp(`^${eL}for`);
+    this._whitespaceRe = new RegExp(`^\\s[${eL}${eR}]\\s$`);
+    this._wsPaddedRe = new RegExp(`^${eL}\\s+.*\\s+${eR}$`);
+    this._catchAllRe2 = new RegExp(`^${eL}(.+)${eR}$`, 's');
+    this._tokenIfRe = new RegExp(`^${eL}(?:if|elseif)\\s+(.+?)${eR}$`);
+    this._ifSimpleRe = new RegExp(`${eL}if (.+?)${eR}([\\s\\S]*)${eL}\\/if${eR}`, 's');
+    this._ifStartReGlobal = new RegExp(`^${eL}if\\b`);
+    this._foreachStripRe = new RegExp(`^${escapeRegex(L)}foreach .+?${escapeRegex(R)}([\\s\\S]*)${escapeRegex(L)}\\/foreach${escapeRegex(R)}$`);
+  }
+
   // Assign one or more template variables — key/value pair, multiple pairs, or batch object
   assign(first, second) {
     // Batch-assign: pass a single object to assign all its keys at once
@@ -96,6 +132,22 @@ export default class Sluz {
       throw new SluzError(`Cannot override built-in modifier <code>${name}</code> on line #${line}`, 47204);
     }
     this.modifiers.set(name, fn);
+  }
+
+  // Set alternate tag delimiters. Both must be single, distinct characters.
+  set_delimiters(left, right) {
+    if (typeof left !== 'string' || typeof right !== 'string') {
+      throw new SluzError('Delimiters must be strings', 1);
+    }
+    if (left.length !== 1 || right.length !== 1) {
+      throw new SluzError('Delimiters must be single characters', 2);
+    }
+    if (left === right) {
+      throw new SluzError('Left and right delimiters must be different', 3);
+    }
+    this.left_delim = left;
+    this.right_delim = right;
+    this._buildCache();
   }
 
   // Enable or disable automatic HTML escaping of all {$var} output
@@ -122,24 +174,26 @@ export default class Sluz {
 
   // Split a template string into [text, endIndex] blocks, handling nested if/foreach/literal
   _getBlocks(str) {
+    const L = this.left_delim;
+    const R = this.right_delim;
     const slen = str.length;
     let start = 0;
     let i;
     const blocks = [];
 
-    // Fast-forward to the first '{' so we don't scan plain text char-by-char
-    let z = str.indexOf('{');
+    // Fast-forward to the first left delimiter so we don't scan plain text char-by-char
+    let z = str.indexOf(L);
     if (z < 0) z = slen;
 
     for (i = z; i < slen; i++) {
       const char = str[i];
-      let isOpen = char === '{';
-      const isClosed = char === '}';
+      let isOpen = char === L;
+      const isClosed = char === R;
 
       // Skip plain-text runs in one jump instead of character-by-character
       if (!isOpen && !isClosed) {
-        const nextOpen = str.indexOf('{', i);
-        const nextClose = str.indexOf('}', i);
+        const nextOpen = str.indexOf(L, i);
+        const nextClose = str.indexOf(R, i);
         const nOpen = nextOpen < 0 ? slen : nextOpen;
         const nClose = nextClose < 0 ? slen : nextClose;
         i = (nOpen < nClose ? nOpen : nClose) - 1;
@@ -149,12 +203,12 @@ export default class Sluz {
       const hasLen = start !== i;
       let isComment = false;
 
-      // Disambiguate '{' used in template tags from literal '{' surrounded by whitespace
+      // Disambiguate left delimiter used in template tags from literal delimiter surrounded by whitespace
       if (isOpen) {
         const prevC = i > 0 ? str[i - 1] : ' ';
         const nextC = i + 1 < slen ? str[i + 1] : ' ';
         const chk = prevC + char + nextC;
-        if (/^\s[\{\}]\s$/.test(chk)) isOpen = false;
+        if (this._whitespaceRe.test(chk)) isOpen = false;
         if (nextC === '*') isComment = true;
       }
 
@@ -163,19 +217,21 @@ export default class Sluz {
         blocks.push([str.slice(start, i), i]);
         start = i;
       } else if (isClosed) {
-        // Find the full tag (or block) from start to the matching '}'
+        // Find the full tag (or block) from start to the matching right delimiter
         const len = i - start + 1;
         let block = str.slice(start, start + len);
-        const openTagMatch = block.match(/^\{(if|foreach|literal)\b/);
+        const openTagMatch = block.match(this._openTagRe);
         // For block tags (if/foreach/literal), scan for the matching close tag
         if (openTagMatch) {
           const ot = openTagMatch[1];
-          const closeTag = `{/${ot}}`;
+          const closeTag = L + '/' + ot + R;
+          const openRe = new RegExp(`${escapeRegex(L)}${escapeRegex(ot)}\\b`, 'g');
+          const closeRe = new RegExp(`${escapeRegex(closeTag)}`, 'g');
           for (let j = i + 1; j < slen; j++) {
-            if (str[j] === '}') {
+            if (str[j] === R) {
               const tmp = str.slice(start, j + 1);
-              const oc = (tmp.match(new RegExp(`\\{${escapeRegex(ot)}\\b`, 'g')) || []).length;
-              const cc = (tmp.match(new RegExp(`\\{\\/${escapeRegex(ot)}\\}`, 'g')) || []).length;
+              const oc = (tmp.match(openRe) || []).length;
+              const cc = (tmp.match(closeRe) || []).length;
               if (oc === cc) {
                 block = tmp;
                 break;
@@ -191,12 +247,12 @@ export default class Sluz {
 
       // Handle {* comment *} — swallow everything up to the closing *}
       if (isComment) {
-        const end = this._findEndingTag(str.slice(start), '{*', '*}');
+        const end = this._findEndingTag(str.slice(start), this._comment_open, this._comment_close);
         if (end < 0) {
           const [line, col] = this._getCharLocation(i);
-          throw new SluzError(`Missing closing <code>*}</code> for comment on line #${line}`, 48724);
+          throw new SluzError(`Missing closing <code>${escapeRegex(this._comment_close)}</code> for comment on line #${line}`, 48724);
         }
-        start += end + 2;
+        start += end + this._comment_close.length;
         i = start;
       }
     }
@@ -211,10 +267,10 @@ export default class Sluz {
     let prevIsIf = false;
     for (let bi = 0; bi < blocks.length; bi++) {
       const bstr = blocks[bi][0];
-      const curIsIf = /^\{if\b/.test(bstr) || /^\{for/.test(bstr);
+      const curIsIf = this._ifStartRe.test(bstr) || this._forStartRe.test(bstr);
       if (prevIsIf) {
         let shouldStrip = 1;
-        const foreachMatch = blocks[bi - 1][0].match(/^\{foreach .+?\}([\s\S]*)\{\/foreach\}$/);
+        const foreachMatch = blocks[bi - 1][0].match(this._foreachStripRe);
         if (foreachMatch) {
           shouldStrip = foreachMatch[1].endsWith('\n') ? 1 : 0;
         }
@@ -234,7 +290,7 @@ export default class Sluz {
     for (const x of blocks) {
       const block = x[0];
       if (!block.length) continue;
-      if (block[0] === '{') {
+      if (block[0] === this.left_delim) {
         html += this._processBlock(block, x[1]);
       } else {
         html += block;
@@ -246,50 +302,50 @@ export default class Sluz {
   // Dispatch a {tag} to the right handler: variable, if, foreach, literal, expression
   _processBlock(str, charPos) {
     this.charPos = charPos;
+    const L = this.left_delim;
+    const R = this.right_delim;
 
     // {$var} or {$var|modifier:param} or {$var|modifier:$param}
     let varMatch;
     if (str.includes('|')) {
-      // Variable with modifiers - allow $ in content for variable parameters
-      varMatch = str.match(/^\{\$([\w|.'";\t :,!@#%^&*?_\-/$]+)\}$/);
+      varMatch = str.match(this._varReWithPipe);
     } else {
-      // Simple variable - don't allow $ to avoid matching expressions like {$a * $b}
-      varMatch = str.match(/^\{\$([\w|.'";\t :,!@#%^&*?_\-/]+)\}$/);
+      varMatch = str.match(this._varReSimple);
     }
-    if (str.startsWith('{$') && varMatch) {
+    if (str.startsWith(L + '$') && varMatch) {
       return this._variableBlock(varMatch[1]);
     }
 
     // {if condition}...{/if}
-    if (str.startsWith('{if ') && str.endsWith('{/if}')) {
+    if (str.startsWith(L + 'if ') && str.endsWith(this._close_if)) {
       return this._ifBlock(str);
     }
 
     // {foreach $array as $key => $value}...{/foreach}
-    const foreachMatch = str.match(/^\{foreach (\$\w[\w.]*) as \$(\w+)(?: => \$(\w+))?\}([\s\S]*)\{\/foreach\}$/);
-    if (str.startsWith('{foreach ') && foreachMatch) {
+    const foreachMatch = str.match(this._foreachRe);
+    if (str.startsWith(L + 'foreach ') && foreachMatch) {
       return this._foreachBlock(foreachMatch[1], foreachMatch[2], foreachMatch[3], foreachMatch[4]);
     }
 
     // {literal}raw content{/literal} — returned verbatim
-    if (str.startsWith('{literal}')) {
-      const m = str.match(/^\{literal\}([\s\S]*)\{\/literal\}$/);
+    if (str.startsWith(L + 'literal')) {
+      const m = str.match(this._literalRe);
       if (m) return m[1];
     }
 
     // { foo } — whitespace-padded content without expression markers, return verbatim
-    if (/^\{\s+.*\s+\}$/.test(str) && !/["\d\$\(]/.test(str)) {
+    if (this._wsPaddedRe.test(str) && !/["\d\$\(]/.test(str)) {
       return str;
     }
 
-    // Fallback: treat anything inside { } as an expression
-    const exprMatch = str.match(/^\{(.+)}$/s);
+    // Fallback: treat anything inside delimiters as an expression
+    const exprMatch = str.match(this._catchAllRe2);
     if (exprMatch) {
       return this._expressionBlock(str, exprMatch[1]);
     }
 
-    // No closing brace — this is a parse error
-    if (!str.endsWith('}')) {
+    // No closing delimiter — this is a parse error
+    if (!str.endsWith(R)) {
       const [line, col] = this._getCharLocation(this.charPos);
       throw new SluzError(`Unclosed tag <code>${str}</code> on line #${line}`, 45821);
     }
@@ -365,12 +421,12 @@ export default class Sluz {
 
   // Evaluate {if}/{elseif}/{else} — fast regex for simple blocks, tokenized for complex
   _ifBlock(str) {
-    // True when the block has no {else} or {elseif}, so we can use a simple regex
-    const isSimple = !str.includes('{else', 7);
+    // True when the block has no else or elseif, so we can use a simple regex
+    const isSimple = !str.includes(this._else_tag, this.left_delim.length);
     let rules = [];
 
     if (isSimple) {
-      const m = str.match(/\{if (.+?)\}([\s\S]*)\{\/if\}/s);
+      const m = str.match(this._ifSimpleRe);
       if (m) {
         rules = [[m[1], this._ltrimOne(m[2], '\n')]];
       }
@@ -613,16 +669,16 @@ export default class Sluz {
     return -1;
   }
 
-  // Split a string on {tag} boundaries into an array of tokens
+  // Split a string on tag boundaries into an array of tokens
   _getTokens(str) {
-    return str.split(/({[^}]+})/).filter(t => t.length);
+    return str.split(this._tokenSplitRe).filter(t => t.length);
   }
 
   // Check if a token is an if/elseif/else/close tag — returns condition, 1, or ''
   _isIfToken(str) {
-    if (str === '{else}') return 1;
-    if (str === '{/if}') return 1;
-    const m = str.match(/^\{(?:if|elseif)\s+(.+?)\}$/);
+    if (str === this._else_tag) return 1;
+    if (str === this._close_if) return 1;
+    const m = str.match(this._tokenIfRe);
     if (m) return m[1];
     return '';
   }
@@ -632,16 +688,18 @@ export default class Sluz {
     const num = toks.length;
     let nested = 0;
     const tmp = new Array(num);
+    const closeIf = this._close_if;
+    const ifStartRe = this._ifStartReGlobal;
 
     for (let i = 0; i < num; i++) {
       const item = toks[i];
-      if (/^\{if\b/.test(item)) nested++;
-      if (item === '{/if}') nested--;
+      if (ifStartRe.test(item)) nested++;
+      if (item === closeIf) nested--;
 
       let yes = 0;
       if (nested === 1) {
         yes = this._isIfToken(item) || 0;
-        if (item === '{/if}') yes = 0;
+        if (item === closeIf) yes = 0;
       }
       tmp[i] = yes;
     }

@@ -1,6 +1,7 @@
 # ⚡ Sluz templating system
 
-A minimalistic JavaScript templating engine with Smarty-like syntax. Zero dependencies, ESM-only.
+A JavaScript templating engine with Smarty-like syntax. Zero dependencies,
+single source file, and lite.
 
 ## 📦 Installation
 
@@ -53,7 +54,8 @@ Or as an ES module import:
 
 ## 📝 Variables
 
-Variables are inserted with `{$varname}`. Dotted paths resolve nested objects and arrays.
+Variables are inserted with `{$varname}`. Dotted paths resolve nested objects
+and arrays.
 
 ```js
 sluz.assign('person', { name: { first: 'Jane' }, colors: ['red', 'green'] });
@@ -89,20 +91,22 @@ Sets template variables. Accepts:
 
 ### `parse(string)`
 
-Parses a template string with the current variables and returns the rendered output.
+Parses a template string with the current variables and returns the rendered
+output.
 
 ### `set_delimiters(left, right)`
 
-Changes the tag delimiters from the default `{`/`}` to any other single-character pair. Both arguments must be strings of exactly length 1 and must be different characters.
+Changes the tag delimiters from the default `{`/`}` to any other
+single-character pair.  Both arguments must be strings of exactly length 1 andu
+must be different characters.
 
 ```js
 sluz.set_delimiters('[', ']');
 sluz.parse('[$name]'); // resolves {$name}
-
-sluz.set_delimiters('{', '}'); // restore defaults
 ```
 
-All tag types work with any delimiter pair: variables, modifiers, if/elseif/else, foreach, literal, comments, and expression blocks.
+All tag types work with any delimiter pair: variables, modifiers,
+if/elseif/else, foreach, literal, comments, and expression blocks.
 
 ```js
 sluz.set_delimiters('[', ']');
@@ -114,7 +118,8 @@ sluz.parse('[* loop through items *][foreach $items as $x][$x] [/foreach]');
 
 ### `setAutoEscape(bool)`
 
-Enables or disables automatic HTML escaping for all `{$var}` output. When enabled, every variable is escaped unless `|noescape` is explicitly used.
+Enables or disables automatic HTML escaping for all `{$var}` output. When
+enabled, every variable is escaped unless `|noescape` is explicitly used.
 
 ```js
 sluz.setAutoEscape(true);
@@ -123,7 +128,9 @@ sluz.parse('{$xss}'); // &lt;script&gt;...
 
 ### `registerModifier(name, fn)`
 
-Registers a custom modifier function. The function receives the variable value as the first argument, followed by any user-supplied arguments from the template.
+Registers a custom modifier function. The function receives the variable value
+as the first argument, followed by any user-supplied arguments from the
+template.
 
 ```js
 sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
@@ -134,29 +141,31 @@ sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
 
 ## 🔧 Modifiers
 
-Modifiers transform variable output using pipe (`|`) syntax. Arguments follow a colon (`:`), multiple arguments are comma-separated.
+Modifiers transform variable output using pipe (`|`) syntax. Arguments follow a
+colon (`:`), multiple arguments are comma-separated.
 
 ### Built-in modifiers
 
-| Modifier    | Description                              | Example                                      |
-|------------|------------------------------------------|----------------------------------------------|
-| `upper`    | Uppercase string                         | `{$name\|upper}`                             |
-| `lower`    | Lowercase string                         | `{$name\|lower}`                             |
-| `ucfirst`  | Capitalize first character               | `{$name\|ucfirst}`                           |
-| `trim`     | Trim whitespace                          | `{$name\|trim}`                              |
-| `length`   | String length                            | `{$name\|length}`                            |
-| `substr`   | Substring `(start[, length])`            | `{$name\|substr:0,3}`                        |
-| `replace`  | Replace all occurrences                  | `{$name\|replace:"old","new"}`               |
-| `join`     | Join array with separator                | `{$items\|join:", "}`                        |
-| `count`    | Count array keys / object keys / truthy  | `{$items\|count}`                            |
-| `first`    | First element of array / first character | `{$items\|first}`                            |
-| `last`     | Last element of array / last character   | `{$items\|last}`                             |
-| `escape`   | HTML-encode `& < > " '`                  | `{$var\|escape}`                             |
-| `noescape` | Bypass auto-escaping (identity)          | `{$var\|noescape}`                           |
+| Modifier   | Description                              | Example                        |
+|------------|------------------------------------------|--------------------------------|
+| `upper`    | Uppercase string                         | `{$name\|upper}`               |
+| `lower`    | Lowercase string                         | `{$name\|lower}`               |
+| `ucfirst`  | Capitalize first character               | `{$name\|ucfirst}`             |
+| `trim`     | Trim whitespace                          | `{$name\|trim}`                |
+| `length`   | String length                            | `{$name\|length}`              |
+| `substr`   | Substring `(start[, length])`            | `{$name\|substr:0,3}`          |
+| `replace`  | Replace all occurrences                  | `{$name\|replace:"old","new"}` |
+| `join`     | Join array with separator                | `{$items\|join:", "}`          |
+| `count`    | Count array keys / object keys / truthy  | `{$items\|count}`              |
+| `first`    | First element of array / first character | `{$items\|first}`              |
+| `last`     | Last element of array / last character   | `{$items\|last}`               |
+| `escape`   | HTML-encode `& < > " '`                  | `{$var\|escape}`               |
+| `noescape` | Bypass auto-escaping (identity)          | `{$var\|noescape}`             |
 
 ### Default values
 
-The `default:` modifier returns a fallback when the variable is empty (undefined, null, or empty string):
+The `default:` modifier returns a fallback when the variable is empty
+(undefined, null, or empty string):
 
 ```js
 sluz.parse('{$name|default:"N/A"}');       // Scott (unchanged)
@@ -172,7 +181,8 @@ sluz.parse('{$name|upper|substr:0,2}');    // SC
 
 ### Auto-escaping
 
-Sluz can automatically HTML-escape all `{$var}` output to prevent cross-site scripting (XSS). Enable it with `setAutoEscape(true)`:
+Sluz can automatically HTML-escape all `{$var}` output to prevent cross-site
+scripting (XSS). Enable it with `setAutoEscape(true)`:
 
 ```js
 sluz.setAutoEscape(true);
@@ -192,7 +202,8 @@ Explicit `|escape` still works and won't double-escape:
 sluz.parse('{$html|escape}');  // still single-escaped
 ```
 
-Chaining with auto-escape: the auto-escape applies *after* all explicit modifiers run, so it won't interfere with transformations:
+Chaining with auto-escape: the auto-escape applies *after* all explicit
+modifiers run, so it won't interfere with transformations:
 
 ```js
 sluz.parse('{$safe|upper}');  // uppercase then auto-escaped
@@ -228,7 +239,8 @@ sluz.parse('{if $count > 5}Big{else}Small{/if}');
 sluz.parse('{if $age < 21}Minor{elseif $age < 65}Adult{else}Senior{/if}');
 ```
 
-Supports `&&`, `||`, `!`, parentheses, and comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`).
+Supports `&&`, `||`, `!`, parentheses, and comparison operators (`==`, `!=`,
+`<`, `>`, `<=`, `>=`).
 
 ---
 
@@ -249,7 +261,7 @@ Supports `&&`, `||`, `!`, parentheses, and comparison operators (`==`, `!=`, `<`
 
 Available inside loops:
 
-| Variable              | Description          |
+| Variable             | Description          |
 |----------------------|----------------------|
 | `$__FOREACH_FIRST`   | 1 on first iteration |
 | `$__FOREACH_LAST`    | 1 on last iteration  |
@@ -301,10 +313,10 @@ try {
 ```
 
 | Error Code | Description                    |
-|-----------|--------------------------------|
-| `45821`   | Unclosed tag                   |
-| `48724`   | Missing comment close `*}`     |
-| `73467`   | Unknown block type             |
-| `18933`   | Unknown tag / invalid eval     |
-| `47204`   | Unknown modifier function      |
-| `95320`   | If/else parsing error          |
+|------------|--------------------------------|
+| `45821`    | Unclosed tag                   |
+| `48724`    | Missing comment close `*}`     |
+| `73467`    | Unknown block type             |
+| `18933`    | Unknown tag / invalid eval     |
+| `47204`    | Unknown modifier function      |
+| `95320`    | If/else parsing error          |

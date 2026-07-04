@@ -46,6 +46,15 @@ export default class Sluz {
     this.right_delim = '}';
 
     this._registerBuiltins();
+    // Persistent eval scope (__S_<var>) and compiled-expression cache. These
+    // avoid rebuilding a scope object and recompiling Function() on every
+    // _peval() call — a huge win for {if}/{foreach} which fire per iteration.
+    // __S is kept in sync incrementally by assign() and _foreachBlock so the
+    // per-iteration cost is just the loop-local variable writes.
+    this.__S = {};
+    this._fnCache = new Map();
+    this._fnNames = [...this.modifiers.keys()];
+    this._fnRefs = this._fnNames.map(n => this.modifiers.get(n));
     this._buildCache();
   }
 
@@ -112,15 +121,19 @@ export default class Sluz {
 
   // Assign one or more template variables — key/value pair, multiple pairs, or batch object
   assign(first, second) {
+    const pfx = this.varPrefix + '_';
     // Batch-assign: pass a single object to assign all its keys at once
     if (arguments.length === 1 && typeof first === 'object' && !Array.isArray(first) && first !== null) {
       for (const [k, v] of Object.entries(first)) {
         this.tplVars[k] = v;
+        this.__S[pfx + k] = v;
       }
     // Key-value pair: assign('name', 'value')
     } else if (arguments.length % 2 === 0) {
       for (let i = 0; i < arguments.length; i += 2) {
-        this.tplVars[arguments[i]] = arguments[i + 1];
+        const k = arguments[i];
+        this.tplVars[k] = arguments[i + 1];
+        this.__S[pfx + k] = arguments[i + 1];
       }
     }
   }
@@ -132,6 +145,11 @@ export default class Sluz {
       throw new SluzError(`Cannot override built-in modifier <code>${name}</code> on line #${line}`, 47204);
     }
     this.modifiers.set(name, fn);
+    // Invalidate compiled-expression cache and refresh the modifier name/ref
+    // arrays so _peval() passes the new (or reordered) function correctly.
+    this._fnCache.clear();
+    this._fnNames = [...this.modifiers.keys()];
+    this._fnRefs = this._fnNames.map(n => this.modifiers.get(n));
   }
 
   // Set alternate tag delimiters. Both must be single, distinct characters.
@@ -306,14 +324,11 @@ export default class Sluz {
     const R = this.right_delim;
 
     // {$var} or {$var|modifier:param} or {$var|modifier:$param}
-    let varMatch;
-    if (str.includes('|')) {
-      varMatch = str.match(this._varReWithPipe);
-    } else {
-      varMatch = str.match(this._varReSimple);
-    }
-    if (str.startsWith(L + '$') && varMatch) {
-      return this._variableBlock(varMatch[1]);
+    if (str.startsWith(L + '$')) {
+      const varMatch = str.includes('|')
+        ? str.match(this._varReWithPipe)
+        : str.match(this._varReSimple);
+      if (varMatch) return this._variableBlock(varMatch[1]);
     }
 
     // {if condition}...{/if}
@@ -374,9 +389,9 @@ export default class Sluz {
         if (ret !== undefined) return ret;
         return '';
       } else if (!isNothing && isDefault) {
-        return String(this._arrayDive(key, this.tplVars) ?? '');
+        return String(tmp ?? '');
       } else {
-        let pre = this._arrayDive(key, this.tplVars) ?? '';
+        let pre = tmp ?? '';
         const parts = this._splitRespectingQuotes(modStr, '|');
         let seenEscape = false;
         let seenNoescape = false;
@@ -465,21 +480,51 @@ export default class Sluz {
       iterable = [src];
     }
 
-    const save = { ...this.tplVars };
+    // Save only the loop-local keys we're about to overwrite instead of
+    // shallow-cloning the entire tplVars scope on every foreach call. We
+    // keep the eval scope (__S) in lock-step with tplVars here so _peval
+    // never has to rebuild it — the per-iteration cost is only the loop-
+    // local variable writes (keyVar/valVar/__FOREACH_*).
+    const pfx = this.varPrefix + '_';
+    const sFirst = pfx + '__FOREACH_FIRST';
+    const sLast = pfx + '__FOREACH_LAST';
+    const sIndex = pfx + '__FOREACH_INDEX';
+    const sKey = pfx + keyVar;
+    const sVal = valVar !== undefined ? pfx + valVar : null;
+
+    const savedFirst = this.tplVars.__FOREACH_FIRST;
+    const savedLast = this.tplVars.__FOREACH_LAST;
+    const savedIndex = this.tplVars.__FOREACH_INDEX;
+    const savedKey = this.tplVars[keyVar];
+    const savedValVar = sVal !== null ? this.tplVars[valVar] : undefined;
+    const savedSFirst = this.__S[sFirst];
+    const savedSLast = this.__S[sLast];
+    const savedSIndex = this.__S[sIndex];
+    const savedSKey = this.__S[sKey];
+    const savedSVal = sVal !== null ? this.__S[sVal] : undefined;
+
     let ret = '';
     let idx = 0;
 
     if (Array.isArray(iterable)) {
       const last = iterable.length - 1;
       for (let i = 0; i <= last; i++) {
-        this.tplVars.__FOREACH_FIRST = idx === 0 ? 1 : 0;
-        this.tplVars.__FOREACH_LAST = idx === last ? 1 : 0;
+        const first = idx === 0 ? 1 : 0;
+        const isLast = idx === last ? 1 : 0;
+        this.tplVars.__FOREACH_FIRST = first;
+        this.tplVars.__FOREACH_LAST = isLast;
         this.tplVars.__FOREACH_INDEX = idx;
-        if (valVar !== undefined) {
+        this.__S[sFirst] = first;
+        this.__S[sLast] = isLast;
+        this.__S[sIndex] = idx;
+        if (sVal !== null) {
           this.tplVars[keyVar] = i;
           this.tplVars[valVar] = iterable[i];
+          this.__S[sKey] = i;
+          this.__S[sVal] = iterable[i];
         } else {
           this.tplVars[keyVar] = iterable[i];
+          this.__S[sKey] = iterable[i];
         }
         ret += this._processBlocks(blocks);
         idx++;
@@ -489,21 +534,40 @@ export default class Sluz {
       const last = keys.length - 1;
       for (let i = 0; i <= last; i++) {
         const k = keys[i];
-        this.tplVars.__FOREACH_FIRST = idx === 0 ? 1 : 0;
-        this.tplVars.__FOREACH_LAST = idx === last ? 1 : 0;
+        const first = idx === 0 ? 1 : 0;
+        const isLast = idx === last ? 1 : 0;
+        this.tplVars.__FOREACH_FIRST = first;
+        this.tplVars.__FOREACH_LAST = isLast;
         this.tplVars.__FOREACH_INDEX = idx;
-        if (valVar !== undefined) {
+        this.__S[sFirst] = first;
+        this.__S[sLast] = isLast;
+        this.__S[sIndex] = idx;
+        if (sVal !== null) {
           this.tplVars[keyVar] = k;
           this.tplVars[valVar] = iterable[k];
+          this.__S[sKey] = k;
+          this.__S[sVal] = iterable[k];
         } else {
           this.tplVars[keyVar] = iterable[k];
+          this.__S[sKey] = iterable[k];
         }
         ret += this._processBlocks(blocks);
         idx++;
       }
     }
 
-    this.tplVars = save;
+    this.tplVars.__FOREACH_FIRST = savedFirst;
+    this.tplVars.__FOREACH_LAST = savedLast;
+    this.tplVars.__FOREACH_INDEX = savedIndex;
+    this.tplVars[keyVar] = savedKey;
+    this.__S[sFirst] = savedSFirst;
+    this.__S[sLast] = savedSLast;
+    this.__S[sIndex] = savedSIndex;
+    this.__S[sKey] = savedSKey;
+    if (sVal !== null) {
+      this.tplVars[valVar] = savedValVar;
+      this.__S[sVal] = savedSVal;
+    }
     return ret;
   }
 
@@ -588,20 +652,19 @@ export default class Sluz {
 
     // Convert template variable references ($foo) to __S_prefix_foo lookups
     const code = this._convertVars(str);
-    // Build a Function that receives the variable scope object and any
-    // registered custom modifier functions as parameters
-    const fnNames = [...this.modifiers.keys()];
-    const fn = new Function('__S', ...fnNames, `"use strict"; return (${code})`);
-
-    // Build the scope object with prefixed keys so $foo maps to __S_foo
-    const __S = {};
-    for (const [k, v] of Object.entries(this.tplVars)) {
-      __S[`${this.varPrefix}_${k}`] = v;
+    // Compile (and cache) a Function bound to the scope object and modifier
+    // functions. Identical conditions inside loops reuse the cached fn so we
+    // only pay the Function() cost once per unique expression string.
+    let fn = this._fnCache.get(code);
+    if (!fn) {
+      fn = new Function('__S', ...this._fnNames, `"use strict"; return (${code})`);
+      this._fnCache.set(code, fn);
     }
 
-    const fns = fnNames.map(n => this.modifiers.get(n));
+    // The eval scope (this.__S) is kept in sync incrementally by assign()
+    // and _foreachBlock, so there's nothing to rebuild here.
     try {
-      return [fn(__S, ...fns), 0];
+      return [fn(this.__S, ...this._fnRefs), 0];
     } catch {
       return [undefined, -1];
     }

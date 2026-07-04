@@ -97,7 +97,7 @@ output.
 ### `set_delimiters(left, right)`
 
 Changes the tag delimiters from the default `{`/`}` to any other
-single-character pair.  Both arguments must be strings of exactly length 1 andu
+single-character pair. Both arguments must be strings of exactly length 1 and
 must be different characters.
 
 ```js
@@ -207,7 +207,7 @@ modifiers run, so it won't interfere with transformations:
 
 ```js
 sluz.parse('{$safe|upper}');  // uppercase then auto-escaped
-// <B> → &lt;B&gt;
+// <B> &lt;B&gt;
 ```
 
 ### Custom modifiers

@@ -809,7 +809,7 @@ export default class Sluz {
 
     const ret = [];
     for (let i = 0; i < conds.length; i++) {
-      ret.push([conds[i], payloads[i]]);
+      ret.push([conds[i], this._ltrimOne(payloads[i], '\n')]);
     }
     return ret;
   }

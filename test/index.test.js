@@ -265,6 +265,20 @@ sluzTest('{* {* nested *} *}'      , '', 'Comment #5 - Nested');
 sluzTest('{* {* {* nested *} *} *}', '', 'Comment #6 - Triple Nested');
 
 // -------------------------------------------------------------------
+// Adjacent comments (bugfix — was throwing 73467)
+// -------------------------------------------------------------------
+sluzTest('{* a *}{* b *}', '', 'Comment #7 - Adjacent comments');
+sluzTest('{* one *}{* two *}{* three *}', '', 'Comment #8 - Three adjacent comments');
+sluzTest('before{* comment *}after', 'beforeafter', 'Comment #9 - Comment between text');
+sluzTest('{$x}{* comment *}{$x}', '77', 'Comment #10 - Comments around variable');
+
+// Bugfix — comment-only lines leak newline
+sluzTest("{* line1 *}\n{* line2 *}", '', 'Comment #11 - Adjacent comment lines');
+sluzTest("{* a *}\n{\$x}", '7', 'Comment #12 - Comment then variable on next line');
+sluzTest("start\n{* mid *}\nend", "start\nend", 'Comment #13 - Comment on own line');
+sluzTest("{* a *}\n{* b *}\n{* c *}", '', 'Comment #14 - Three adjacent comment lines');
+
+// -------------------------------------------------------------------
 // Built-in modifier tests
 // -------------------------------------------------------------------
 sluzTest('{$word|upper}'                   , 'CRAZY', 'Built-in modifier #1 - upper');

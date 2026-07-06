@@ -174,6 +174,23 @@ sluzTest('{if true}a{else}b{if true}c{/if}{/if}'                , 'a'       , 'I
 sluzTest('{if false}a{else}b{if true}c{/if}{/if}'               , 'bc'      , 'If #26 - Nested with false');
 sluzTest('{if true}{/if}'                                       , ''        , 'If #27 - If with "" for payload');
 
+// #28-29: Tags on their own lines must not emit extra \n before payload (bug regression)
+const _ifOwnLineTrue = `A
+{if \$debug}
+YES
+{else}
+NO
+{/if}`;
+const _ifOwnLineFalse = `A
+{if \$bogus_var}
+YES
+{else}
+NO
+{/if}`;
+
+sluzTest(_ifOwnLineTrue, 'A\nYES\n', 'If #28 - Tag on own line, true branch, no extra blank line');
+sluzTest(_ifOwnLineFalse, 'A\nNO\n', 'If #29 - Tag on own line, false/else branch, no extra blank line');
+
 // -------------------------------------------------------------------
 // Foreach tests
 // -------------------------------------------------------------------

@@ -203,6 +203,8 @@ export default class Sluz {
     let z = str.indexOf(L);
     if (z < 0) z = slen;
 
+    let prevWasComment = false;
+
     for (i = z; i < slen; i++) {
       const char = str[i];
       let isOpen = char === L;
@@ -232,9 +234,15 @@ export default class Sluz {
 
       // Push the text before this opening tag as a literal block
       if (isOpen && hasLen) {
-        blocks.push([str.slice(start, i), i]);
+        let text = str.slice(start, i);
+        if (prevWasComment) {
+          text = this._ltrimOne(text, '\n');
+          prevWasComment = false;
+        }
+        blocks.push([text, i]);
         start = i;
       } else if (isClosed) {
+        prevWasComment = false;
         // Find the full tag (or block) from start to the matching right delimiter
         const len = i - start + 1;
         let block = str.slice(start, start + len);
@@ -260,7 +268,7 @@ export default class Sluz {
 
         if (block.length) blocks.push([block, i]);
         start += block.length;
-        i = start;
+        i = start - 1;
       }
 
       // Handle {* comment *} — swallow everything up to the closing *}
@@ -271,13 +279,18 @@ export default class Sluz {
           throw new SluzError(`Missing closing <code>${escapeRegex(this._comment_close)}</code> for comment on line #${line}`, 48724);
         }
         start += end + this._comment_close.length;
-        i = start;
+        i = start - 1;
+        prevWasComment = true;
       }
     }
 
     // Push any remaining text after the last tag as a literal block
     if (start < slen) {
-      blocks.push([str.slice(start), i]);
+      let text = str.slice(start);
+      if (prevWasComment) {
+        text = this._ltrimOne(text, '\n');
+      }
+      blocks.push([text, i]);
     }
 
     // Strip the leading newline from blocks that follow {if}/{for} so the

@@ -10,9 +10,9 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "V=$(node -p \"require('./package.json').version\") && esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js --banner:js=\"/* template-sluz v$V */\" && esbuild src/sluz.global.js --bundle --minify --format=iife --outfile=src/sluz.global.min.js --banner:js=\"/* template-sluz v$V */\"",
-    "build:esm": "V=$(node -p \"require('./package.json').version\") && esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js --banner:js=\"/* template-sluz v$V */\"",
-    "build:global": "V=$(node -p \"require('./package.json').version\") && esbuild src/sluz.global.js --bundle --minify --format=iife --outfile=src/sluz.global.min.js --banner:js=\"/* template-sluz v$V */\""
+    "build": "V=$(node -p \"require('./package.json').version\") && esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js --banner:js=\"/* template-sluz v$V (ESM) */\" && esbuild src/sluz.global.js --bundle --minify --format=iife --outfile=src/sluz.global.min.js --banner:js=\"/* template-sluz v$V (global) */\"",
+    "build:esm": "V=$(node -p \"require('./package.json').version\") && esbuild src/sluz.js --minify --format=esm --outfile=src/sluz.min.js --banner:js=\"/* template-sluz v$V (ESM) */\"",
+    "build:global": "V=$(node -p \"require('./package.json').version\") && esbuild src/sluz.global.js --bundle --minify --format=iife --outfile=src/sluz.global.min.js --banner:js=\"/* template-sluz v$V (global) */\""
   },
   "files": [
     "src"

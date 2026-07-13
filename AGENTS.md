@@ -11,12 +11,14 @@ Single-package ESM templating engine (Smarty-like syntax). Zero dependencies. No
 | `npm run build` | Minify ESM + global via esbuild |
 | `npm run build:esm` | Minify ESM only (`src/sluz.min.js`) |
 | `npm run build:global` | Minify global only (`src/sluz.global.min.js`) |
+| `npx vitest run -t "test name"` | Run a single test by its `sluzTest` name |
 
-No lint, typecheck, or formatter configured. No CI workflows.
+No lint, typecheck, or formatter configured. No CI workflows. A `Makefile` mirrors these targets (`make`, `make test`, `make clean`).
 
 ## Structure
 
 - **Entry:** `src/sluz.js` — exports `Sluz` (default) and `SluzError` (named). Engine is entirely in this one file (896 lines)
+- **Global/browser build:** `src/sluz.global.js` is a 2-line wrapper (`window.Sluz = Sluz`) bundled into `sluz.global.min.js`. Do NOT add logic there — it only exists for the IIFE/global build target.
 - **Tests:** `test/index.test.js` — Vitest, uses `sluzTest(input, expected, name)` helper. `expected` can be a string (`toBe`) or `/regex/` (`toMatch`)
 - **Build artifacts:** `src/sluz.min.js` and `src/sluz.global.min.js` are gitignored; rebuild after changes with `npm run build`
 - **`"files": ["src"]`** — only `src/` is published to npm

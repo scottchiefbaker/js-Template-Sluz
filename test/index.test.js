@@ -249,14 +249,41 @@ sluzTest('{}'                                    , '{}'                 , 'Liter
 // -------------------------------------------------------------------
 // Whitespace-padded brackets tests
 // -------------------------------------------------------------------
-sluzTest('{ foo }'        , '{ foo }'        , 'Whitespace-padded #1 - Simple text');
-sluzTest('{  bar  }'      , '{  bar  }'      , 'Whitespace-padded #2 - Multiple spaces');
-sluzTest('{ hello world }', '{ hello world }', 'Whitespace-padded #3 - Multiple words');
-sluzTest('{ (1+2) }'      , '3'              , 'Whitespace-padded #4 - Expression with parens');
-sluzTest('{ 1 + 2 }'      , '3'              , 'Whitespace-padded #5 - Expression with number');
-sluzTest('{ $x }'         , '7'              , 'Whitespace-padded #6 - Variable');
-sluzTest('{ "hello" }'    , 'hello'          , 'Whitespace-padded #7 - String literal');
-sluzTest('{ $x + 1 }'     , '8'              , 'Whitespace-padded #8 - Expression with variable');
+// literal text containing { } ; outside any tag is passed through
+// verbatim. These two are kept as plain text by the tokenizer's outside-
+// whitespace guard (the { is surrounded by spaces), so they render unchanged.
+sluzTest('function(foo) { $i = 10; }' , 'function(foo) { $i = 10; }', 'Whitespace-padded #1 - Braces/semicolon literal');
+sluzTest('foo() { bar }'              , 'foo() { bar }'             , 'Whitespace-padded #2 - Braces literal');
+
+// §4: whitespace adjacent to a delimiter (lead, tail, or both) is error #50981
+test('Whitespace-adjacent #1 - Leading whitespace throws 50981', () => {
+  const s = new Sluz(); s.assign('x', 7);
+  expect(() => s.parse('{ $foo}')).toThrowError(/error #50981/);
+});
+test('Whitespace-adjacent #2 - Trailing whitespace throws 50981', () => {
+  const s = new Sluz(); s.assign('x', 7);
+  expect(() => s.parse('{$foo }')).toThrowError(/error #50981/);
+});
+test('Whitespace-adjacent #3 - Both sides whitespace throws 50981', () => {
+  const s = new Sluz(); s.assign('x', 7);
+  expect(() => s.parse('{ $foo }')).toThrowError(/error #50981/);
+});
+test('Whitespace-adjacent #4 - Leading whitespace with modifier throws 50981', () => {
+  const s = new Sluz(); s.assign('foo', 'x');
+  expect(() => s.parse('{ $foo|upper}')).toThrowError(/error #50981/);
+});
+test('Whitespace-adjacent #5 - Trailing whitespace with modifier throws 50981', () => {
+  const s = new Sluz(); s.assign('foo', 'x');
+  expect(() => s.parse('{$foo|upper }')).toThrowError(/error #50981/);
+});
+test('Whitespace-adjacent #6 - Both sides expression throws 50981', () => {
+  const s = new Sluz();
+  expect(() => s.parse('{ 3 + 4 }')).toThrowError(/error #50981/);
+});
+test('Whitespace-adjacent #7 - Trailing whitespace expression throws 50981', () => {
+  const s = new Sluz(); s.assign('x', 7);
+  expect(() => s.parse('{$x + 1 }')).toThrowError(/error #50981/);
+});
 
 // -------------------------------------------------------------------
 // Whitespace input/output

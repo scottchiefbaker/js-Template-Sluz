@@ -111,7 +111,6 @@ export default class Sluz {
     this._ifStartRe = new RegExp(`^${eL}if\\b`);
     this._forStartRe = new RegExp(`^${eL}for`);
     this._whitespaceRe = new RegExp(`^\\s[${eL}${eR}]\\s$`);
-    this._wsPaddedRe = new RegExp(`^${eL}\\s+.*\\s+${eR}$`);
     this._catchAllRe2 = new RegExp(`^${eL}(.+)${eR}$`, 's');
     this._tokenIfRe = new RegExp(`^${eL}(?:if|elseif)\\s+(.+?)${eR}$`);
     this._ifSimpleRe = new RegExp(`${eL}if (.+?)${eR}([\\s\\S]*)${eL}\\/if${eR}`, 's');
@@ -336,12 +335,39 @@ export default class Sluz {
     const L = this.left_delim;
     const R = this.right_delim;
 
+    // Whitespace-adjacent delimiter rules (see whitespace.md):
+    // exempt literal text: a block whose inner content contains {, }, or ;
+    //   (or is a comment block) is passed through verbatim, never subject to
+    //   the whitespace rule below. In this engine such literal brace/semicolon
+    //   text is normally already kept as plain text by the tokenizer's
+    //   outside-whitespace guard; this is the explicit second guard. We only
+    //   exempt when the inner does NOT contain a nested sub-tag ({/, {$ , {if,
+    //   {foreach, {else, {literal}), so genuine control blocks are unaffected.
+    const inner = str.slice(L.length, str.length - R.length);
+    if (str.startsWith(L + '*')) { return ''; }
+
+    // exemption: literal text whose inner contains {, }, or ; is passed
+    // through verbatim. Strip quoted substrings first so a ; or } inside a
+    // string parameter (e.g. {$y|join:"; "}) is not mistaken for literal text.
+    const innerStripped = inner.replace(/'[^']*'|"[^"]*"/g, '');
+    const subTagRe = new RegExp(`${escapeRegex(L)}(\\/|\\$|if|foreach|else|literal)`);
+    if (/[{};]/.test(innerStripped) && !subTagRe.test(innerStripped)) { return str; }
+
+    // genuine template tag: whitespace immediately inside either delimiter
+    //   (lead, tail, or both) is a syntax error.
+    const lead_ws = /^\s/.test(inner);
+    const tail_ws = /\s$/.test(inner);
+    if (lead_ws || tail_ws) {
+      const [line, col] = this._getCharLocation(this.charPos);
+      throw new SluzError(`Whitespace next to delimiter in tag <code>${str}</code> on line #${line}`, 50981);
+    }
+
     // {$var} or {$var|modifier:param} or {$var|modifier:$param}
     if (str.startsWith(L + '$')) {
       const varMatch = str.includes('|')
         ? str.match(this._varReWithPipe)
         : str.match(this._varReSimple);
-      if (varMatch) return this._variableBlock(varMatch[1]);
+      if (varMatch) { return this._variableBlock(varMatch[1]); }
     }
 
     // {if condition}...{/if}
@@ -359,11 +385,6 @@ export default class Sluz {
     if (str.startsWith(L + 'literal')) {
       const m = str.match(this._literalRe);
       if (m) return m[1];
-    }
-
-    // { foo } — whitespace-padded content without expression markers, return verbatim
-    if (this._wsPaddedRe.test(str) && !/["\d\$\(]/.test(str)) {
-      return str;
     }
 
     // Fallback: treat anything inside delimiters as an expression

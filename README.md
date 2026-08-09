@@ -91,7 +91,7 @@ Sets template variables. Accepts:
 
 ### `parse(string)`
 
-Parses a template string with the current variables and returns the rendered
+Parses a template string with the assigned variables and returns the rendered
 output.
 
 ### `set_delimiters(left, right)`
@@ -156,7 +156,7 @@ colon (`:`), multiple arguments are comma-separated.
 | `substr`   | Substring `(start[, length])`            | `{$name\|substr:0,3}`          |
 | `replace`  | Replace all occurrences                  | `{$name\|replace:"old","new"}` |
 | `join`     | Join array with separator                | `{$items\|join:", "}`          |
-| `count`    | Count array keys / object keys / truthy  | `{$items\|count}`              |
+| `count`    | Count array keys / object keys           | `{$items\|count}`              |
 | `first`    | First element of array / first character | `{$items\|first}`              |
 | `last`     | Last element of array / last character   | `{$items\|last}`               |
 | `escape`   | HTML-encode `& < > " '`                  | `{$var\|escape}`               |
@@ -213,7 +213,11 @@ sluz.parse('{$safe|upper}');  // uppercase then auto-escaped
 ### Custom modifiers
 
 ```js
-sluz.registerModifier('greet', name => `Howdy, ${name}!`);
+function greet(name) {
+    return `Howdy, ${name}!`;
+}
+
+sluz.registerModifier('greet', greet);
 sluz.parse('{$name|greet}');               // Howdy, Scott!
 ```
 

@@ -26,6 +26,7 @@ sluz.assign('null', null);
 sluz.assign('true', 1);
 sluz.assign('false', 0);
 sluz.assign('conf', { main: 1, debug: 0 });
+sluz.assign('single', ['only']);
 sluz.assign({ color: 'yellow', age: 43, book: 'Dark Tower' });
 
 // Register test helper functions (matching Perl test's main:: injections)
@@ -65,8 +66,8 @@ sluzTest('{3}'               , '3'          , 'Basic #10 - Number literal');
 sluzTest('{"Scott"}'         , 'Scott'      , 'Basic #11 - String literal');
 sluzTest('{$x}'              , '7'          , 'Basic #12 - Single Character variable');
 
-//test.skip('Basic #13 - Array Lookup - PHP Syntax (PHP bracket syntax)', () => {});
-//test.skip('Basic #14 - Hash Lookup - PHP Syntax (PHP bracket syntax)', () => {});
+sluzTest('{$array[1]}', 'two', 'Basic #13 - Array Lookup - PHP Syntax');
+sluzTest('{$cust["last"]}', 'Baker', 'Basic #14 - Hash Lookup - PHP Syntax');
 
 // Default values
 sluzTest('{$last|default:\'123\'}'        , 'Baker', 'Basic #15 - Default - Not Used');
@@ -96,6 +97,24 @@ test('Basic #29 - Simple math that returns floating point', () => {
   const got = sluz.parse('{1.1234 + 2.3456}');
   expect(parseFloat(got)).toBeCloseTo(3.469, 3);
 });
+
+// Basic #30-#45 — default chaining, mixed types, math on vars, concatenation, ternary
+sluzTest('{$bogus_var|default:\'hello\'|upper}', 'HELLO', 'Basic #30 - Default chained with modifier (empty var)'); // KNOWN BUG: default: value not passed through later modifiers
+sluzTest('{$last|default:\'nobody\'|upper}', 'BAKER', 'Basic #31 - Default chained with modifier (non-empty var)'); // KNOWN BUG: default: value not passed through later modifiers
+sluzTest('{$number + $null}', '15', 'Basic #32 - Mixed types: number + null');
+sluzTest('{$number + $x}', '22', 'Basic #33 - Mixed types: number + numeric string');
+sluzTest('{$empty_string|default:"N/A"}', 'N/A', 'Basic #34 - Default with forward slash (empty)');
+sluzTest('{$first|default:"N/A"}', 'Scott', 'Basic #35 - Default with forward slash (non-empty)');
+sluzTest('{$empty_string|default:"path/to/file"}', 'path/to/file', 'Basic #36 - Default with path containing slashes');
+sluzTest('{$empty_string|default:"yes/no"}', 'yes/no', 'Basic #37 - Default with slash abbreviation');
+sluzTest("{$empty_string|default:\"C:\\\"}", "C:\\", 'Basic #38 - Default with backslash'); // KNOWN BUG: backslash in arg breaks var regex match
+sluzTest('{$x - 3}', '4', 'Basic #39 - Subtraction on a variable'); // KNOWN BUG: - in var char class misroutes to var path
+sluzTest('{3 - $x}', '-4', 'Basic #40 - Subtraction with leading constant');
+sluzTest('{$x / 2}', '3.5', 'Basic #41 - Division on a variable'); // KNOWN BUG: / in var char class misroutes to var path
+sluzTest('{$x % 3}', '1', 'Basic #42 - Modulo on a variable'); // KNOWN BUG: % in var char class misroutes to var path
+sluzTest('{$x * 3}', '21', 'Basic #43 - Multiplication on a variable'); // KNOWN BUG: * in var char class misroutes to var path
+sluzTest('{$first . " " . $last}', 'Scott Baker', 'Basic #44 - String concatenation'); // KNOWN BUG: no PHP . concat operator
+sluzTest('{$x > 3 ? "yes" : "no"}', 'yes', 'Basic #45 - Ternary expression');
 
 // -------------------------------------------------------------------
 // Custom/User functions
@@ -191,6 +210,14 @@ NO
 sluzTest(_ifOwnLineTrue, 'A\nYES\n', 'If #28 - Tag on own line, true branch, no extra blank line');
 sluzTest(_ifOwnLineFalse, 'A\nNO\n', 'If #29 - Tag on own line, false/else branch, no extra blank line');
 
+sluzTest('{if $zero}1{elseif $bogus_var}2{elseif $debug}3{else}4{/if}', '3', 'If #30 - Multiple elseif');
+sluzTest('{if $first == "Scott"}YES{else}NO{/if}', 'YES', 'If #31 - Double-quoted string comparison');
+sluzTest('{if $number + 2 > 10}YES{/if}', 'YES', 'If #32 - Arithmetic in condition (true)');
+sluzTest('{if $number - 20 > 10}YES{/if}', '', 'If #33 - Arithmetic in condition (false)');
+sluzTest("{if \$bogus_var}\nONE\n{elseif \$debug}\nTWO\n{else}\nTHREE\n{/if}", "TWO\n", 'If #34 - if/elseif/else tags on own lines');
+sluzTest('{if $zero}1{elseif $debug}2{/if}', '2', 'If #35 - Elseif without else (true)'); // KNOWN BUG: isSimple check misses elseif, misroutes to simple-if path
+sluzTest('{if $zero}1{elseif $bogus_var}2{/if}', '', 'If #36 - Elseif without else (false)');
+
 // -------------------------------------------------------------------
 // Foreach tests
 // -------------------------------------------------------------------
@@ -218,6 +245,8 @@ sluzTest('{foreach $y as $z}{$z}{/foreach}'                                   , 
 sluzTest('{foreach $array as $x}{if $__FOREACH_FIRST}FIRST{/if}{$x}{/foreach}', 'FIRSTonetwothree', 'Foreach #20 - Foreach FIRST item');
 sluzTest('{foreach $array as $x}{$x}{if $__FOREACH_LAST}LAST{/if}{/foreach}'  , 'onetwothreeLAST' , 'Foreach #21 - Foreach LAST item');
 sluzTest('{foreach $array as $x}{$x}{$__FOREACH_INDEX}{/foreach}'             , 'one0two1three2'  , 'Foreach #22 - Foreach index');
+sluzTest('{foreach $single as $x}{$__FOREACH_FIRST}{$__FOREACH_LAST}{/foreach}', '11'              , 'Foreach #23 - Single element FIRST/LAST both true');
+sluzTest('{foreach $cust as $k => $v}{$k}:{$v},{/foreach}'                     , 'first:Scott,last:Baker,', 'Foreach #24 - String keys');
 
 // -------------------------------------------------------------------
 // Plain text tests
@@ -245,6 +274,9 @@ sluzTest('{literal}{foreach}{/literal}'          , '{foreach}'          , 'Liter
 sluzTest('{literal}{literal}{/literal}{/literal}', '{literal}{/literal}', 'Literal #5 - Meta literal');
 sluzTest(' { '                                   , ' { '                , 'Literal #6 - { with whitespace');
 sluzTest('{}'                                    , '{}'                 , 'Literal #7 - Raw {}');
+sluzTest('{literal}\nfoo\n{/literal}', 'foo', 'Literal #8 - Standalone literal block strips line \\n'); // KNOWN BUG: literal newline-strip not implemented
+sluzTest('x{literal}\nfoo\n{/literal}', 'x\nfoo', 'Literal #9 - Inline literal (open) keeps \\n'); // KNOWN BUG: literal newline-strip not implemented
+sluzTest('{literal}\nfoo\n{/literal}y', 'foo\ny', 'Literal #10 - Inline literal (close) keeps \\n'); // KNOWN BUG: literal newline-strip not implemented
 
 // -------------------------------------------------------------------
 // Whitespace-padded brackets tests
@@ -297,6 +329,7 @@ sluzTest("{if \$x}{\$x}{/if}"                           , '7'                  ,
 sluzTest("{if \$x}\n{\$x}\n{/if}"                       , "7\n"                , 'Whitespace input/output #7');
 sluzTest("{foreach \$y as \$x}\n{\$x}\n{/foreach}\nlast", "2\n4\n6\nlast"      , 'Whitespace input/output #8');
 sluzTest("{foreach \$array as \$x}{\$x} {/foreach}\nEND", "one two three \nEND", 'Whitespace input/output #9');
+sluzTest("{foreach \$y as \$x}{\$x}{/foreach}\nEND"     , "246\nEND"          , 'Whitespace input/output #10');
 
 // -------------------------------------------------------------------
 // Comment tests
@@ -321,6 +354,9 @@ sluzTest("{* line1 *}\n{* line2 *}", '', 'Comment #11 - Adjacent comment lines')
 sluzTest("{* a *}\n{\$x}", '7', 'Comment #12 - Comment then variable on next line');
 sluzTest("start\n{* mid *}\nend", "start\nend", 'Comment #13 - Comment on own line');
 sluzTest("{* a *}\n{* b *}\n{* c *}", '', 'Comment #14 - Three adjacent comment lines');
+sluzTest("{* line1\nline2 *}", '', 'Comment #15 - Multi-line comment');
+sluzTest("{* line1\n{$first}\nline2 *}", '', 'Comment #16 - Multi-line comment with variable');
+sluzTest('{* a *} {* b *}', ' ', 'Comment #17 - Comments separated by a space');
 
 // -------------------------------------------------------------------
 // Built-in modifier tests

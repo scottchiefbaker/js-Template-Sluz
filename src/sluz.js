@@ -275,13 +275,19 @@ export default class Sluz {
           if (ot === 'literal') {
             const ltag = L + 'literal' + R;
             const rtag = L + '/literal' + R;
-            let inner = block.slice(ltag.length, block.length - rtag.length);
             const beginsLine = start === 0 || str[start - 1] === '\n';
             const afterPos = start + scanned;
             const endsLine = afterPos >= slen || str[afterPos] === '\n';
-            if (beginsLine && inner[0] === '\n') inner = inner.slice(1);
-            if (endsLine && inner[inner.length - 1] === '\n') inner = inner.slice(0, -1);
-            block = ltag + inner + rtag;
+            // Peek at the boundary chars first; only slice/rebuild when a trim
+            // will actually happen, so the common case stays allocation-free.
+            const trimFirst = beginsLine && block[ltag.length] === '\n';
+            const trimLast = endsLine && block[block.length - rtag.length - 1] === '\n';
+            if (trimFirst || trimLast) {
+              let inner = block.slice(ltag.length, block.length - rtag.length);
+              if (trimFirst) inner = inner.slice(1);
+              if (trimLast) inner = inner.slice(0, -1);
+              block = ltag + inner + rtag;
+            }
           }
         }
 
@@ -443,10 +449,17 @@ export default class Sluz {
       let pre;
       let mods = modStr;
       if (isDefault) {
+        // Split the default value (up to the next unquoted |) from any
+        // modifiers chained after it. When the variable is present the
+        // default is never consulted, so only the chained modifiers apply.
         const afterDefault = modStr.replace(/^.*?default:/, '');
         const dParts = this._splitRespectingQuotes(afterDefault, '|');
-        const [dval] = this._peval(dParts[0]);
-        pre = isNothing ? dval : (tmp ?? '');
+        if (isNothing) {
+          const [dval] = this._peval(dParts[0]);
+          pre = dval;
+        } else {
+          pre = tmp ?? '';
+        }
         mods = dParts.slice(1).join('|');
       } else {
         pre = tmp ?? '';
@@ -518,8 +531,7 @@ export default class Sluz {
 
     let ret = '';
     for (const [cond, payload] of rules) {
-      const test = this._convertVars(cond);
-      const [res] = this._peval(test);
+      const [res] = this._peval(cond);
       if (res) {
         const inBlocks = this._getBlocks(payload);
         ret += this._processBlocks(inBlocks);
@@ -531,11 +543,10 @@ export default class Sluz {
 
   // Process {foreach $arr as $k => $v}...{/foreach} with __FOREACH_FIRST/LAST/INDEX
   _foreachBlock(srcExpr, keyVar, valVar, payload) {
-    const convSrc = this._convertVars(srcExpr);
     payload = this._ltrimOne(payload, '\n');
     const blocks = this._getBlocks(payload);
 
-    const [src] = this._peval(convSrc);
+    const [src] = this._peval(srcExpr);
 
     let iterable;
     if (src == null) {
@@ -644,8 +655,7 @@ export default class Sluz {
       throw new SluzError(`Unknown block type <code>${str}</code> on line #${line}`, 73467);
     }
 
-    const after = this._convertVars(inner);
-    const [ret, err] = this._peval(after);
+    const [ret, err] = this._peval(inner);
 
     const valid = ret !== undefined && ret !== null && typeof ret !== 'object';
 
@@ -665,6 +675,13 @@ export default class Sluz {
   _convertVars(str) {
     str = String(str);
     if (!str.includes('$') && !str.includes('.')) return str;
+
+    // Common case: $vars but no dots — a plain prefix swap is enough and
+    // avoids the char-by-char loop below (dotted paths, decimal literals,
+    // and the PHP . concat operator all need the loop).
+    if (!str.includes('.')) {
+      return str.replace(/\$\w+/g, m => `__S.sluz_pfx_${m.slice(1)}`);
+    }
 
     let out = '';
     let i = 0;
@@ -850,10 +867,10 @@ export default class Sluz {
     return str.split(this._tokenSplitRe).filter(t => t.length);
   }
 
-  // Check if a token is an if/elseif/else/close tag — returns condition, 1, or ''
+  // Check if a token is an if/elseif/else/close tag — returns condition, '1', or ''
   _isIfToken(str) {
-    if (str === this._else_tag) return 1;
-    if (str === this._close_if) return 1;
+    if (str === this._else_tag) return '1';
+    if (str === this._close_if) return '1';
     const m = str.match(this._tokenIfRe);
     if (m) return m[1];
     return '';

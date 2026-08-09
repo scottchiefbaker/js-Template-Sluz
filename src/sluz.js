@@ -99,6 +99,12 @@ export default class Sluz {
     this._elseif_tag = L + 'elseif ';
     this._comment_open = L + '*';
     this._comment_close = '*' + R;
+    // Tag-open prefixes for the per-tag dispatch fast path
+    this._varOpen = L + '$';
+    this._ifOpen = L + 'if ';
+    this._foreachOpen = L + 'foreach ';
+    this._elseOpen = L + 'else';
+    this._literalOpen = L + 'literal';
 
     // Variable pattern mirrors the PHP engine: \$\w[\w.]* with an optional
     // |anything for modifiers. Anything else (math, quotes, spaces) falls
@@ -114,6 +120,7 @@ export default class Sluz {
     this._ifStartRe = new RegExp(`^${eL}if\\b`);
     this._forStartRe = new RegExp(`^${eL}for`);
     this._whitespaceRe = new RegExp(`^\\s[${eL}${eR}]\\s$`);
+    this._subTagRe = new RegExp(`${eL}(\\/|\\$|if|foreach|else|literal)`);
     this._catchAllRe2 = new RegExp(`^${eL}(.+)${eR}$`, 's');
     this._tokenIfRe = new RegExp(`^${eL}(?:if|elseif)\\s+(.+?)${eR}$`);
     this._ifSimpleRe = new RegExp(`${eL}if (.+?)${eR}([\\s\\S]*)${eL}\\/if${eR}`, 's');
@@ -361,35 +368,54 @@ export default class Sluz {
     const L = this.left_delim;
     const R = this.right_delim;
 
-    // Whitespace-adjacent delimiter rules (see whitespace.md):
-    // exempt literal text: a block whose inner content contains {, }, or ;
-    //   (or is a comment block) is passed through verbatim, never subject to
-    //   the whitespace rule below. In this engine such literal brace/semicolon
-    //   text is normally already kept as plain text by the tokenizer's
-    //   outside-whitespace guard; this is the explicit second guard. We only
-    //   exempt when the inner does NOT contain a nested sub-tag ({/, {$ , {if,
-    //   {foreach, {else, {literal}), so genuine control blocks are unaffected.
-    const inner = str.slice(L.length, str.length - R.length);
-    if (str.startsWith(L + '*')) { return ''; }
+    // {* comment *} — nothing to render
+    if (str.startsWith(this._comment_open)) { return ''; }
 
-    // exemption: literal text whose inner contains {, }, or ; is passed
-    // through verbatim. Strip quoted substrings first so a ; or } inside a
-    // string parameter (e.g. {$y|join:"; "}) is not mistaken for literal text.
-    const innerStripped = inner.replace(/'[^']*'|"[^"]*"/g, '');
-    const subTagRe = new RegExp(`${escapeRegex(L)}(\\/|\\$|if|foreach|else|literal)`);
-    if (/[{};]/.test(innerStripped) && !subTagRe.test(innerStripped)) { return str; }
+    // Whitespace-adjacent delimiter rules (see whitespace.md): a genuine
+    // template tag ($var, control, close, or literal block) can never be the
+    // literal-text exemption below — it carries no unquoted braces or
+    // semicolons, and a literal block's braces always pair with a sub-tag —
+    // so it takes a fast path that peeks at the boundary chars instead of
+    // slicing out the inner content.
+    const first = str[L.length];
+    const isGenTag = first === '$'
+      || first === '/'
+      || str.startsWith(this._ifOpen)
+      || str.startsWith(this._foreachOpen)
+      || str.startsWith(this._elseOpen)
+      || str.startsWith(this._literalOpen);
 
-    // genuine template tag: whitespace immediately inside either delimiter
-    //   (lead, tail, or both) is a syntax error.
-    const lead_ws = /^\s/.test(inner);
-    const tail_ws = /\s$/.test(inner);
-    if (lead_ws || tail_ws) {
-      const [line, col] = this._getCharLocation(this.charPos);
-      throw new SluzError(`Whitespace next to delimiter in tag <code>${str}</code> on line #${line}`, 50981);
+    if (isGenTag) {
+      // whitespace immediately inside either delimiter is a syntax error.
+      // ASCII char compares beat single-char \s regex tests on this hot path.
+      const last = str[str.length - R.length - 1];
+      if (first === ' ' || first === '\t' || first === '\n' || first === '\r'
+        || first === '\f' || first === '\v'
+        || last === ' ' || last === '\t' || last === '\n' || last === '\r'
+        || last === '\f' || last === '\v') {
+        const [line, col] = this._getCharLocation(this.charPos);
+        throw new SluzError(`Whitespace next to delimiter in tag <code>${str}</code> on line #${line}`, 50981);
+      }
+    } else {
+      // Not a genuine tag — possibly literal text between delimiters. Inner
+      // content containing {, }, or ; is exempted and passed through verbatim,
+      // unless it contains a nested sub-tag ({/, {$ , {if, {foreach, {else,
+      // {literal}). The quote-strip and sub-tag scan are only run when the
+      // inner actually contains such a char. Everything else is subject to
+      // the whitespace rule.
+      const inner = str.slice(L.length, str.length - R.length);
+      if (/[{};]/.test(inner)) {
+        const innerStripped = inner.replace(/'[^']*'|"[^"]*"/g, '');
+        if (/[{};]/.test(innerStripped) && !this._subTagRe.test(innerStripped)) { return str; }
+      }
+      if (/^\s/.test(inner) || /\s$/.test(inner)) {
+        const [line, col] = this._getCharLocation(this.charPos);
+        throw new SluzError(`Whitespace next to delimiter in tag <code>${str}</code> on line #${line}`, 50981);
+      }
     }
 
     // {$var} or {$var|modifier:param} or {$var|modifier:$param}
-    if (str.startsWith(L + '$')) {
+    if (str.startsWith(this._varOpen)) {
       const varMatch = str.includes('|')
         ? str.match(this._varReWithPipe)
         : str.match(this._varReSimple);
@@ -397,18 +423,18 @@ export default class Sluz {
     }
 
     // {if condition}...{/if}
-    if (str.startsWith(L + 'if ') && str.endsWith(this._close_if)) {
+    if (str.startsWith(this._ifOpen) && str.endsWith(this._close_if)) {
       return this._ifBlock(str);
     }
 
     // {foreach $array as $key => $value}...{/foreach}
     const foreachMatch = str.match(this._foreachRe);
-    if (str.startsWith(L + 'foreach ') && foreachMatch) {
+    if (str.startsWith(this._foreachOpen) && foreachMatch) {
       return this._foreachBlock(foreachMatch[1], foreachMatch[2], foreachMatch[3], foreachMatch[4]);
     }
 
     // {literal}raw content{/literal} — returned verbatim
-    if (str.startsWith(L + 'literal')) {
+    if (str.startsWith(this._literalOpen)) {
       const m = str.match(this._literalRe);
       if (m) return m[1];
     }

@@ -100,8 +100,11 @@ export default class Sluz {
     this._comment_open = L + '*';
     this._comment_close = '*' + R;
 
-    this._varReWithPipe = new RegExp(`^${eL}\\$([\\w|.'";\\t :,!@#%^&*?_\\-/$]+)${eR}$`);
-    this._varReSimple = new RegExp(`^${eL}\\$([\\w|.'";\\t :,!@#%^&*?_\\-/]+)${eR}$`);
+    // Variable pattern mirrors the PHP engine: \$\w[\w.]* with an optional
+    // |anything for modifiers. Anything else (math, quotes, spaces) falls
+    // through to the expression handler, e.g. {$x - 3} or {$first . " "}.
+    this._varReWithPipe = new RegExp(`^${eL}\\$(\\w[\\w.]*\\|.*)${eR}$`);
+    this._varReSimple = new RegExp(`^${eL}\\$(\\w[\\w.]*)${eR}$`);
     this._foreachRe = new RegExp(`^${eL}foreach (\\$\\w[\\w.]*) as \\$(\\w+)(?: => \\$(\\w+))?${eR}([\\s\\S]*)${eL}\\/foreach${eR}$`);
     this._literalRe = new RegExp(`^${eL}literal${eR}([\\s\\S]*)${eL}\\/literal${eR}$`);
     this._catchAllRe = new RegExp(`^${eL}(.+)${eR}$`, 's');
@@ -247,6 +250,7 @@ export default class Sluz {
         let block = str.slice(start, start + len);
         const openTagMatch = block.match(this._openTagRe);
         // For block tags (if/foreach/literal), scan for the matching close tag
+        let scanned = block.length;
         if (openTagMatch) {
           const ot = openTagMatch[1];
           const closeTag = L + '/' + ot + R;
@@ -259,14 +263,30 @@ export default class Sluz {
               const cc = (tmp.match(closeRe) || []).length;
               if (oc === cc) {
                 block = tmp;
+                scanned = tmp.length;
                 break;
               }
             }
           }
+
+          // When {literal}/{/literal} each sit alone on their own line, strip
+          // the single \n that belongs to those tag lines from the content,
+          // mirroring the comment-line handling. (Inline tags keep their \n.)
+          if (ot === 'literal') {
+            const ltag = L + 'literal' + R;
+            const rtag = L + '/literal' + R;
+            let inner = block.slice(ltag.length, block.length - rtag.length);
+            const beginsLine = start === 0 || str[start - 1] === '\n';
+            const afterPos = start + scanned;
+            const endsLine = afterPos >= slen || str[afterPos] === '\n';
+            if (beginsLine && inner[0] === '\n') inner = inner.slice(1);
+            if (endsLine && inner[inner.length - 1] === '\n') inner = inner.slice(0, -1);
+            block = ltag + inner + rtag;
+          }
         }
 
         if (block.length) blocks.push([block, i]);
-        start += block.length;
+        start += scanned;
         i = start - 1;
       }
 
@@ -417,18 +437,25 @@ export default class Sluz {
       const isDefault = modStr.includes('default:');
       const isNothing = this._isNothing(tmp);
 
-      if (isNothing && isDefault) {
-        const dval = modStr.replace(/^.*?default:/, '');
-        const [ret] = this._peval(dval);
-        if (ret !== undefined) return ret;
-        return '';
-      } else if (!isNothing && isDefault) {
-        return String(tmp ?? '');
+      // default: behaves like any other modifier — the default value (or the
+      // real value, when present) is the input for the modifiers chained
+      // after it, e.g. {$missing|default:'hello'|upper} -> 'HELLO'.
+      let pre;
+      let mods = modStr;
+      if (isDefault) {
+        const afterDefault = modStr.replace(/^.*?default:/, '');
+        const dParts = this._splitRespectingQuotes(afterDefault, '|');
+        const [dval] = this._peval(dParts[0]);
+        pre = isNothing ? dval : (tmp ?? '');
+        mods = dParts.slice(1).join('|');
       } else {
-        let pre = tmp ?? '';
-        const parts = this._splitRespectingQuotes(modStr, '|');
-        let seenEscape = false;
-        let seenNoescape = false;
+        pre = tmp ?? '';
+      }
+
+      let seenEscape = false;
+      let seenNoescape = false;
+      if (mods) {
+        const parts = this._splitRespectingQuotes(mods, '|');
         for (const p of parts) {
           const colonIdx = this._findFirstColonOutsideQuotes(p);
           const func = colonIdx >= 0 ? p.slice(0, colonIdx) : p;
@@ -454,11 +481,13 @@ export default class Sluz {
           }
           pre = fn(...params);
         }
-        if (this.auto_escape && !seenNoescape && !seenEscape) {
-          pre = this._esc(pre);
-        }
-        return pre;
       }
+
+      if (pre == null) return '';
+      if (this.auto_escape && !seenNoescape && !seenEscape) {
+        pre = this._esc(pre);
+      }
+      return pre;
     }
 
     const ret = this._arrayDive(str, this.tplVars);
@@ -470,8 +499,11 @@ export default class Sluz {
 
   // Evaluate {if}/{elseif}/{else} — fast regex for simple blocks, tokenized for complex
   _ifBlock(str) {
-    // True when the block has no else or elseif, so we can use a simple regex
-    const isSimple = !str.includes(this._else_tag, this.left_delim.length);
+    // True when the block has no else or elseif, so we can use a simple regex.
+    // elseifs must route through the tokenizer too, or an {elseif} without a
+    // matching {else} would be mistaken for literal payload text.
+    const isSimple = !str.includes(this._else_tag, this.left_delim.length)
+      && !str.includes(this._elseif_tag, this.left_delim.length);
     let rules = [];
 
     if (isSimple) {
@@ -632,16 +664,63 @@ export default class Sluz {
   // Convert $templateVar references to internal __S.prefix_var lookups for safe eval
   _convertVars(str) {
     str = String(str);
-    if (!str.includes('$')) return str;
-    return str.replace(/\$\w[\w.]*/g, match => {
-      const parts = match.slice(1).split('.');
-      const first = parts.shift();
-      let res = `__S.sluz_pfx_${first}`;
-      for (const p of parts) {
-        res += /^\d+$/.test(p) ? `[${p}]` : `.${p}`;
+    if (!str.includes('$') && !str.includes('.')) return str;
+
+    let out = '';
+    let i = 0;
+    const n = str.length;
+    while (i < n) {
+      const ch = str[i];
+      const next = i + 1 < n ? str[i + 1] : '';
+
+      // Copy quoted strings verbatim so dots/pipes inside args are untouched
+      if (ch === "'" || ch === '"') {
+        const end = this._findQuoteEnd(str, i);
+        out += str.slice(i, end + 1);
+        i = end + 1;
+        continue;
       }
-      return res;
-    });
+
+      // $var or $var.path -> __S.scope lookup (dots inside are property access)
+      if (ch === '$' && /\w/.test(next)) {
+        const m = str.slice(i).match(/^\$\w[\w.]*/);
+        const tok = m[0];
+        const parts = tok.slice(1).split('.');
+        const first = parts.shift();
+        let res = `__S.sluz_pfx_${first}`;
+        for (const p of parts) {
+          res += /^\d+$/.test(p) ? `[${p}]` : `.${p}`;
+        }
+        out += res;
+        i += tok.length;
+        continue;
+      }
+
+      // PHP string-concat operator (.) -> JS +, unless the dot is part of a
+      // property access (foo.bar, arr[0].bar) or a decimal literal (1.5)
+      if (ch === '.') {
+        const prev = i > 0 ? str[i - 1] : ' ';
+        const isProperty = /\w/.test(next) && (/\w/.test(prev) || prev === ']' || prev === ')');
+        if (!isProperty) {
+          out += '+';
+          i++;
+          continue;
+        }
+      }
+
+      out += ch;
+      i++;
+    }
+    return out;
+  }
+
+  // Return the index of the matching quote (no escape handling), or end of string
+  _findQuoteEnd(str, start) {
+    const quote = str[start];
+    for (let i = start + 1; i < str.length; i++) {
+      if (str[i] === quote) return i;
+    }
+    return str.length - 1;
   }
 
   // Fast-path resolution for literals, quoted strings, and simple var refs (avoids Function)

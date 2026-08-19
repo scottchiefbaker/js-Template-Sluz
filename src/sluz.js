@@ -258,6 +258,7 @@ export default class Sluz {
         const openTagMatch = block.match(this._openTagRe);
         // For block tags (if/foreach/literal), scan for the matching close tag
         let scanned = block.length;
+        let foundClose = false;
         if (openTagMatch) {
           const ot = openTagMatch[1];
           const closeTag = L + '/' + ot + R;
@@ -271,9 +272,18 @@ export default class Sluz {
               if (oc === cc) {
                 block = tmp;
                 scanned = tmp.length;
+                foundClose = true;
                 break;
               }
             }
+          }
+          // Mismatched/unclosed block tag: throw 45821 only when the open tag
+          // is otherwise well-formed (a valid condition/literal). Malformed
+          // opens like `{if debug}` fall through and are rejected later (73467).
+          const wellFormed = ot === 'literal' || /["\d\$\(]/.test(block);
+          if (!foundClose && wellFormed) {
+            const [line, col] = this._getCharLocation(start);
+            throw new SluzError(`Unclosed tag <code>${block}</code> on line #${line}`, 45821);
           }
 
           // When {literal}/{/literal} each sit alone on their own line, strip

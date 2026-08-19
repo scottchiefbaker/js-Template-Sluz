@@ -15,9 +15,19 @@ Single-package ESM templating engine (Smarty-like syntax). Zero dependencies. No
 
 No lint, typecheck, or formatter configured. No CI workflows. A `Makefile` mirrors these targets (`make`, `make test`, `make clean`).
 
+## Performance regression checks
+
+Run `node detail-benchmark.js` to benchmark template types (variables, modifiers, if/elseif, foreach, comments, literal, mixed) over 15 000 iterations and print Millis + Iter/s per template plus a TOTAL. To compare against your change, capture the baseline output before editing and re-run after:
+
+- `node detail-benchmark.js > /tmp/bench-before.txt`
+- `node detail-benchmark.js > /tmp/bench-after.txt`
+- `diff` / review the Millis and Iter/s columns
+
+Flags: `-n 100000` / `--iterations <n>` (or a bare number) sets the iteration count; `-f <regex>` / `--filter <regex>` limits runs to templates whose name/desc matches. Timing uses `Date.now()`, so run both sides with the same iteration count and expect some noise; prefer larger `-n` for stable comparisons.
+
 ## Structure
 
-- **Entry:** `src/sluz.js` — exports `Sluz` (default) and `SluzError` (named). Engine is entirely in this one file (896 lines)
+- **Entry:** `src/sluz.js` — exports `Sluz` (default) and `SluzError` (named). The whole engine lives in this one file
 - **Global/browser build:** `src/sluz.global.js` is a 2-line wrapper (`window.Sluz = Sluz`) bundled into `sluz.global.min.js`. Do NOT add logic there — it only exists for the IIFE/global build target.
 - **Tests:** `test/index.test.js` — Vitest, uses `sluzTest(input, expected, name)` helper. `expected` can be a string (`toBe`) or `/regex/` (`toMatch`)
 - **Build artifacts:** `src/sluz.min.js` and `src/sluz.global.min.js` are gitignored; rebuild after changes with `npm run build`
@@ -26,13 +36,14 @@ No lint, typecheck, or formatter configured. No CI workflows. A `Makefile` mirro
 ## Conventions
 
 - ESM only — all imports use `.js` extensions
-- `test.skip()` commented out (no JS equivalent for PHP-syntax tests)
 - Template errors throw `SluzError` with numeric `code` property
+- `registerModifier` refuses to override built-in `escape`/`noescape` (throws `SluzError` code 47204)
+- `default:` is NOT a registered modifier — it's special-cased inside `_variableBlock()`, and checks `_isNothing()` (undefined/null/empty string, but not `0` or objects). Chained modifiers after it receive the default/resolved value, so `{$missing|default:'hi'|upper}` → `HI`
 - `assign()` accepts key/value pairs or a single object batch-assign
+- Auto-escape of all `{$var}` output is toggled via `setAutoEscape(bool)` (default off); `{$var|escape}`/`{$var|noescape}` opt out of / into double-escaping as expected
 - Custom modifiers registered via `registerModifier(name, fn)` — first arg is the value, subsequent args from `:` params
 - Alternate delimiters via `set_delimiters(left, right)` — both must be single, distinct chars; cache rebuilds automatically
 - `$__FOREACH_FIRST`, `$__FOREACH_LAST`, `$__FOREACH_INDEX` are reserved loop variables
-- `default:` modifier checks `_isNothing()` (undefined/null/empty string, but not `0` or objects)
 
 ## Known pitfall
 

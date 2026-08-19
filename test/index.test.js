@@ -28,6 +28,7 @@ sluz.assign('false', 0);
 sluz.assign('conf', { main: 1, debug: 0 });
 sluz.assign('single', ['only']);
 sluz.assign({ color: 'yellow', age: 43, book: 'Dark Tower' });
+sluz.assign('deep', { a: { b: { c: 'deepval' } } });
 
 // Register test helper functions (matching Perl test's main:: injections)
 sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
@@ -99,22 +100,37 @@ test('Basic #29 - Simple math that returns floating point', () => {
 });
 
 // Basic #30-#45 — default chaining, mixed types, math on vars, concatenation, ternary
-sluzTest('{$bogus_var|default:\'hello\'|upper}', 'HELLO', 'Basic #30 - Default chained with modifier (empty var)'); // KNOWN BUG: default: value not passed through later modifiers
-sluzTest('{$last|default:\'nobody\'|upper}', 'BAKER', 'Basic #31 - Default chained with modifier (non-empty var)'); // KNOWN BUG: default: value not passed through later modifiers
+sluzTest('{$bogus_var|default:\'hello\'|upper}', 'HELLO', 'Basic #30 - Default chained with modifier (empty var)');
+sluzTest('{$last|default:\'nobody\'|upper}', 'BAKER', 'Basic #31 - Default chained with modifier (non-empty var)');
 sluzTest('{$number + $null}', '15', 'Basic #32 - Mixed types: number + null');
 sluzTest('{$number + $x}', '22', 'Basic #33 - Mixed types: number + numeric string');
 sluzTest('{$empty_string|default:"N/A"}', 'N/A', 'Basic #34 - Default with forward slash (empty)');
 sluzTest('{$first|default:"N/A"}', 'Scott', 'Basic #35 - Default with forward slash (non-empty)');
 sluzTest('{$empty_string|default:"path/to/file"}', 'path/to/file', 'Basic #36 - Default with path containing slashes');
 sluzTest('{$empty_string|default:"yes/no"}', 'yes/no', 'Basic #37 - Default with slash abbreviation');
-sluzTest("{$empty_string|default:\"C:\\\"}", "C:\\", 'Basic #38 - Default with backslash'); // KNOWN BUG: backslash in arg breaks var regex match
-sluzTest('{$x - 3}', '4', 'Basic #39 - Subtraction on a variable'); // KNOWN BUG: - in var char class misroutes to var path
+sluzTest("{$empty_string|default:\"C:\\\"}", "C:\\", 'Basic #38 - Default with backslash');
+sluzTest('{$x - 3}', '4', 'Basic #39 - Subtraction on a variable');
 sluzTest('{3 - $x}', '-4', 'Basic #40 - Subtraction with leading constant');
-sluzTest('{$x / 2}', '3.5', 'Basic #41 - Division on a variable'); // KNOWN BUG: / in var char class misroutes to var path
-sluzTest('{$x % 3}', '1', 'Basic #42 - Modulo on a variable'); // KNOWN BUG: % in var char class misroutes to var path
-sluzTest('{$x * 3}', '21', 'Basic #43 - Multiplication on a variable'); // KNOWN BUG: * in var char class misroutes to var path
-sluzTest('{$first . " " . $last}', 'Scott Baker', 'Basic #44 - String concatenation'); // KNOWN BUG: no PHP . concat operator
+sluzTest('{$x / 2}', '3.5', 'Basic #41 - Division on a variable');
+sluzTest('{$x % 3}', '1', 'Basic #42 - Modulo on a variable');
+sluzTest('{$x * 3}', '21', 'Basic #43 - Multiplication on a variable');
+sluzTest('{$first . " " . $last}', 'Scott Baker', 'Basic #44 - String concatenation');
 sluzTest('{$x > 3 ? "yes" : "no"}', 'yes', 'Basic #45 - Ternary expression');
+
+// Direct output of falsy values
+sluzTest('{$zero}', '0', 'Basic #49 - Direct output of zero (falsy)');
+sluzTest('{$true}', '1', 'Basic #50 - Direct output of true (truthy)');
+sluzTest('{$null}', '', 'Basic #52 - Direct output of null (falsy)');
+
+// Multi-level dot paths
+sluzTest('{$deep.a.b.c}', 'deepval', 'Basic #53 - Multi-level dot path (3 levels)');
+sluzTest('{$deep.a.b.x|default:"dflt"}', 'dflt', 'Basic #54 - Multi-level dot path with default');
+sluzTest('{$bogus_var|default:"a:b"}', 'a:b', 'Basic #55 - Default with colon inside quotes');
+
+// Bare function/expression blocks
+test('Error #5 - call to undefined function', () => {
+  expect(() => sluz.parse('{undefined_func()}')).toThrow(/18933/);
+});
 
 // -------------------------------------------------------------------
 // Custom/User functions
@@ -160,6 +176,23 @@ test('Error #3 - syntax error', () => {
 
 test('Error #4 - syntax error', () => {
   expect(() => sluz.parse('{if debug}')).toThrow(/73467/);
+});
+
+// Unclosed control blocks must yield 45821 (matching PHP)
+test('Error #9 - unclosed if', () => {
+  expect(() => sluz.parse('{if $x}foo')).toThrow(/45821/);
+});
+
+test('Error #10 - unclosed if with else', () => {
+  expect(() => sluz.parse('{if $x}foo{else}bar')).toThrow(/45821/);
+});
+
+test('Error #11 - unclosed foreach', () => {
+  expect(() => sluz.parse('{foreach $array as $item}foo')).toThrow(/45821/);
+});
+
+test('Error #12 - unclosed literal', () => {
+  expect(() => sluz.parse('{literal}foo')).toThrow(/45821/);
 });
 
 // -------------------------------------------------------------------
@@ -215,8 +248,22 @@ sluzTest('{if $first == "Scott"}YES{else}NO{/if}', 'YES', 'If #31 - Double-quote
 sluzTest('{if $number + 2 > 10}YES{/if}', 'YES', 'If #32 - Arithmetic in condition (true)');
 sluzTest('{if $number - 20 > 10}YES{/if}', '', 'If #33 - Arithmetic in condition (false)');
 sluzTest("{if \$bogus_var}\nONE\n{elseif \$debug}\nTWO\n{else}\nTHREE\n{/if}", "TWO\n", 'If #34 - if/elseif/else tags on own lines');
-sluzTest('{if $zero}1{elseif $debug}2{/if}', '2', 'If #35 - Elseif without else (true)'); // KNOWN BUG: isSimple check misses elseif, misroutes to simple-if path
+sluzTest('{if $zero}1{elseif $debug}2{/if}', '2', 'If #35 - Elseif without else (true)');
 sluzTest('{if $zero}1{elseif $bogus_var}2{/if}', '', 'If #36 - Elseif without else (false)');
+
+// Fast-path condition evaluation (port from PHP If #40-#51)
+sluzTest('{if $conf.main}YES{/if}', 'YES', 'If #40 - Dotted condition fast path');
+sluzTest('{if $number != 10}YES{/if}', 'YES', 'If #41 - Fast path != (true)');
+sluzTest('{if $number !== 15}YES{/if}', '', 'If #42 - Fast path !== (false, same value)');
+sluzTest('{if $number >= 15}YES{/if}', 'YES', 'If #43 - Fast path >= (true)');
+sluzTest('{if $number <= 14}YES{/if}', '', 'If #44 - Fast path <= (false)');
+sluzTest('{if $number < 20}YES{/if}', 'YES', 'If #45 - Fast path < (true)');
+sluzTest('{if $number > 20}YES{/if}', '', 'If #46 - Fast path > (false)');
+sluzTest('{if $number > $x}YES{/if}', 'YES', 'If #47 - Fast path var-vs-var (15 > 7)');
+sluzTest('{if $x == $x}YES{/if}', 'YES', 'If #48 - Fast path var-vs-var equality');
+sluzTest("{if \$first == 'Scott'}YES{else}NO{/if}", 'YES', 'If #49 - Single-quoted string comparison');
+sluzTest('{if $bogus_var}{elseif $cust.first}X{/if}', 'X', 'If #50 - Elseif with dotted variable');
+sluzTest('{if $bogus}{elseif $subarr.one.0}Y{/if}', 'Y', 'If #51 - Elseif with multi-level dotted variable');
 
 // -------------------------------------------------------------------
 // Foreach tests
@@ -274,9 +321,9 @@ sluzTest('{literal}{foreach}{/literal}'          , '{foreach}'          , 'Liter
 sluzTest('{literal}{literal}{/literal}{/literal}', '{literal}{/literal}', 'Literal #5 - Meta literal');
 sluzTest(' { '                                   , ' { '                , 'Literal #6 - { with whitespace');
 sluzTest('{}'                                    , '{}'                 , 'Literal #7 - Raw {}');
-sluzTest('{literal}\nfoo\n{/literal}', 'foo', 'Literal #8 - Standalone literal block strips line \\n'); // KNOWN BUG: literal newline-strip not implemented
-sluzTest('x{literal}\nfoo\n{/literal}', 'x\nfoo', 'Literal #9 - Inline literal (open) keeps \\n'); // KNOWN BUG: literal newline-strip not implemented
-sluzTest('{literal}\nfoo\n{/literal}y', 'foo\ny', 'Literal #10 - Inline literal (close) keeps \\n'); // KNOWN BUG: literal newline-strip not implemented
+sluzTest('{literal}\nfoo\n{/literal}', 'foo', 'Literal #8 - Standalone literal block strips line \\n');
+sluzTest('x{literal}\nfoo\n{/literal}', 'x\nfoo', 'Literal #9 - Inline literal (open) keeps \\n');
+sluzTest('{literal}\nfoo\n{/literal}y', 'foo\ny', 'Literal #10 - Inline literal (close) keeps \\n');
 
 // -------------------------------------------------------------------
 // Whitespace-padded brackets tests
@@ -551,27 +598,41 @@ describe('auto_escape', () => {
     expect(ae.parse('{if $flag}{$payload|noescape}{/if}')).toBe('<img src=x>');
   });
 
-  test('Auto-escape #12 - Null var empty', () => {
+  // Port from PHP Auto Escape #8/#10/#11 (PHP's ae instance never sets $x,
+  // so {$x + 3} there is 3; here x=7 gives 10 — the point is it's NOT escaped)
+  test('Auto-escape #12 - Expression block not escaped', () => {
+    expect(ae.parse('{$x + 3}')).toBe('10');
+  });
+
+  test('Auto-escape #13 - Default value is escaped', () => {
+    expect(ae.parse('{$empty_string|default:"<b>x</b>"}')).toBe('&lt;b&gt;x&lt;/b&gt;');
+  });
+
+  test('Auto-escape #14 - Default escapes even when var empty', () => {
+    expect(ae.parse('{$bogus_var|default:"<b>...</b>"}')).toBe('&lt;b&gt;...&lt;/b&gt;');
+  });
+
+  test('Auto-escape #15 - Null var empty', () => {
     expect(ae.parse('{$null}')).toBe('');
   });
 
-  test('Auto-escape #13 - Zero preserved', () => {
+  test('Auto-escape #16 - Zero preserved', () => {
     expect(ae.parse('{$zero}')).toBe('0');
   });
 
-  test('Auto-escape #14 - Array ref', () => {
+  test('Auto-escape #17 - Array ref', () => {
     expect(ae.parse('{$array}')).toBe('ARRAY');
   });
 
-  test('Auto-escape #15 - Hash ref', () => {
+  test('Auto-escape #18 - Hash ref', () => {
     expect(ae.parse('{$cust}')).toBe('HASH');
   });
 
-  test('Auto-escape #16 - Empty string', () => {
+  test('Auto-escape #19 - Empty string', () => {
     expect(ae.parse('{$empty_string}')).toBe('');
   });
 
-  test('Auto-escape #17 - Plain text unchanged', () => {
+  test('Auto-escape #20 - Plain text unchanged', () => {
     expect(ae.parse('{$plain}')).toBe('Scott');
   });
 });

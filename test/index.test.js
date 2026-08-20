@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import Sluz from '../src/sluz.js';
+import Sluz, { VERSION } from '../src/sluz.js';
+import pkg from '../package.json';
 
 // -------------------------------------------------------------------
 // Setup
@@ -51,6 +52,14 @@ function sluzTest(input, expected, name) {
     }
   });
 }
+
+// -------------------------------------------------------------------
+// Version drift-guard
+// -------------------------------------------------------------------
+test('exposes version matching package.json', () => {
+  expect(VERSION).toBe(pkg.version);
+  expect(Sluz.version).toBe(pkg.version);
+});
 
 // -------------------------------------------------------------------
 // Basic tests

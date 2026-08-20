@@ -32,3 +32,5 @@ The global version creates `Sluz` in the global namespace.
 ```
 
 The minified version of the files can be rebuilt with the `npm run build` command.
+
+Run-time version access: `Sluz.version` (static), `import { VERSION } from 'template-sluz'` (ESM).

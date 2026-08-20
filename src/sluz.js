@@ -33,7 +33,12 @@ function _escapeHtml(v) {
     .replace(/'/g, '&#x27;');
 }
 
+// Run-time version — must match package.json "version" (guarded by test)
+export const VERSION = '0.9.7';
+
 export default class Sluz {
+  static version = VERSION;
+
   // Create a new Sluz template engine instance
   constructor() {
     this.tplVars = {};

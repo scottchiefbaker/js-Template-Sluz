@@ -26,6 +26,15 @@ orders:
 			var sluz_tpl = '<h2>Orders</h2>\n\n{foreach $orders as $x}\n<div>{$x.ID}) Total: {$x.Total} in items: {$x.Items}</div>\n{/foreach}\n\n<p class="mt-3">Customer: {$name}</p>';
 
 			$(document).ready(function() {
+				// Pull version from library at runtime
+				try {
+					var ver = Sluz.version ?? "";
+					if (ver) {
+						var el = document.getElementById('sluz-header');
+						if (el) el.textContent = 'Sluz v' + ver + ' sandbox (Javascript)';
+					}
+				} catch (e) {}
+
 				init();
 				process();
 			});
@@ -141,7 +150,7 @@ orders:
 <body class="" data-bs-theme="dark">
 	<div class="container-fluid">
 		<div class="row">
-			<h2 class="col-10 bg-dark-subtle text-light p-2 ps-3">Sluz v0.9.7 sandbox (Javascript)</h2>
+			<h2 id="sluz-header" class="col-10 bg-dark-subtle text-light p-2 ps-3">Sluz vX.Y.Z sandbox (Javascript)</h2>
 			<h2 class="col-2 text-end bg-dark-subtle text-light p-2 pe-3"><a href="#" title="Use sample data" id="use_defaults"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-brilliance" viewBox="0 0 16 16">
   <path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16M1 8a7 7 0 0 0 7 7 3.5 3.5 0 1 0 0-7 3.5 3.5 0 1 1 0-7 7 7 0 0 0-7 7"/>
 </svg></a></h2>

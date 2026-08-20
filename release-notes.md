@@ -12,21 +12,22 @@ All tests must pass before publishing.
 
 ### 2. Bump the version
 
-Edit `version` in `package.json` following [SemVer](https://semver.org/):
+Edit `VERSION` in `src/sluz.js` following [SemVer](https://semver.org/):
 
 - **Patch** (`0.9.3` → `0.9.4`): bug fixes
 - **Minor** (`0.9.3` → `0.10.0`): new features, backwards-compatible
 - **Major** (`0.9.3` → `1.0.0`): breaking changes
 
-Or use npm:
+Then rebuild:
 
 ```bash
-npm version patch   # 0.9.3 → 0.9.4
-npm version minor   # 0.9.3 → 0.10.0
-npm version major   # 0.9.3 → 1.0.0
+npm run build
 ```
 
-`npm version` also creates a git tag automatically.
+The build runs `scripts/sync-version.js` (via the `prebuild` hook), which
+writes the new version into `package.json` automatically. Don't use
+`npm version` — it only bumps `package.json` and would drift out of sync
+with `src/sluz.js`.
 
 ### 3. Verify what will be published
 
@@ -61,7 +62,7 @@ git push && git push --tags
 ## Checklist Before Publishing
 
 - [ ] All tests pass (`npm test`)
-- [ ] `package.json` version is updated
+- [ ] `VERSION` bumped in `src/sluz.js` (`package.json` follows via `npm run build`)
 - [ ] `README.md` is up to date with any API changes
 - [ ] `npm pack --dry-run` shows only intended files (`src/`)
 - [ ] git tag matches the new version

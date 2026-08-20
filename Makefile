@@ -1,4 +1,4 @@
-.PHONY: all build build-esm build-global test clean
+.PHONY: all build build-esm build-global test sync clean
 
 all: build
 
@@ -13,6 +13,9 @@ build-global:
 
 test:
 	npm test
+
+sync:
+	npm run version:sync
 
 clean:
 	rm -f src/sluz.min.js src/sluz.global.min.js

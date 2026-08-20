@@ -33,7 +33,8 @@ function _escapeHtml(v) {
     .replace(/'/g, '&#x27;');
 }
 
-// Run-time version — must match package.json "version" (guarded by test)
+// Run-time version — the single source of truth. package.json "version" is
+// synced from this export by scripts/sync-version.js on build/publish.
 export const VERSION = '0.9.7';
 
 export default class Sluz {

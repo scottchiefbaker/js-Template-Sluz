@@ -12,6 +12,7 @@ Single-package ESM templating engine (Smarty-like syntax). Zero dependencies. No
 | `npm run build:esm` | Minify ESM only (`src/sluz.min.js`) |
 | `npm run build:global` | Minify global only (`src/sluz.global.min.js`) |
 | `npx vitest run -t "test name"` | Run a single test by its `sluzTest` name |
+| `npm run version:sync` | Sync `package.json` version from `src/sluz.js` `VERSION` (`--check` = exit 1 on mismatch, for CI) |
 
 No lint, typecheck, or formatter configured. No CI workflows. A `Makefile` mirrors these targets (`make`, `make test`, `make clean`).
 
@@ -35,6 +36,7 @@ Flags: `-n 100000` / `--iterations <n>` (or a bare number) sets the iteration co
 
 ## Conventions
 
+- Version source of truth is `export const VERSION` in `src/sluz.js`. The `prebuild`/`prepublishOnly` npm hooks run `scripts/sync-version.js` to write it into `package.json` automatically — bump the version in `src/sluz.js`, never directly in `package.json` (do not use `npm version`; it would drift out of sync)
 - ESM only — all imports use `.js` extensions
 - Template errors throw `SluzError` with numeric `code` property
 - `registerModifier` refuses to override built-in `escape`/`noescape` (throws `SluzError` code 47204)

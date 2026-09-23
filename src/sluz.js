@@ -12,6 +12,10 @@ const ESCAPE_RE = {
   '|': '\\|', '^': '\\^', '$': '\\$',
 };
 
+const CACHE_LIMIT = 512;
+const BLOCK_CACHE_MAX_CHARS = 1024 * 1024;
+const BLOCK_CACHE_MAX_ENTRY = 64 * 1024;
+
 // Escape regex-special characters so the string can be used as a literal pattern
 function escapeRegex(s) {
   return s.replace(/[\\.*+?()\[\]{}|^$]/g, ch => ESCAPE_RE[ch]);
@@ -59,6 +63,12 @@ export default class Sluz {
     // per-iteration cost is just the loop-local variable writes.
     this.__S = {};
     this._fnCache = new Map();
+    this._fnCacheOld = new Map();
+    this._exprCache = new Map();
+    this._exprCacheOld = new Map();
+    this._pathCache = new Map();
+    this._blockCache = new Map();
+    this._blockCacheChars = 0;
     this._fnNames = [...this.modifiers.keys()];
     this._fnRefs = this._fnNames.map(n => this.modifiers.get(n));
     this._buildCache();
@@ -98,6 +108,8 @@ export default class Sluz {
     const R = this.right_delim;
     const eL = escapeRegex(L);
     const eR = escapeRegex(R);
+    this._blockCache.clear();
+    this._blockCacheChars = 0;
 
     this._close_if = L + '/if' + R;
     this._close_foreach = L + '/foreach' + R;
@@ -163,6 +175,9 @@ export default class Sluz {
     // Invalidate compiled-expression cache and refresh the modifier name/ref
     // arrays so _peval() passes the new (or reordered) function correctly.
     this._fnCache.clear();
+    this._fnCacheOld.clear();
+    this._exprCache.clear();
+    this._exprCacheOld.clear();
     this._fnNames = [...this.modifiers.keys()];
     this._fnRefs = this._fnNames.map(n => this.modifiers.get(n));
   }
@@ -207,6 +222,9 @@ export default class Sluz {
 
   // Split a template string into [text, endIndex] blocks, handling nested if/foreach/literal
   _getBlocks(str) {
+    const cached = this._blockCache.get(str);
+    if (cached !== undefined) return cached;
+
     const L = this.left_delim;
     const R = this.right_delim;
     const slen = str.length;
@@ -267,21 +285,13 @@ export default class Sluz {
         let foundClose = false;
         if (openTagMatch) {
           const ot = openTagMatch[1];
+          const openTag = L + ot;
           const closeTag = L + '/' + ot + R;
-          const openRe = new RegExp(`${escapeRegex(L)}${escapeRegex(ot)}\\b`, 'g');
-          const closeRe = new RegExp(`${escapeRegex(closeTag)}`, 'g');
-          for (let j = i + 1; j < slen; j++) {
-            if (str[j] === R) {
-              const tmp = str.slice(start, j + 1);
-              const oc = (tmp.match(openRe) || []).length;
-              const cc = (tmp.match(closeRe) || []).length;
-              if (oc === cc) {
-                block = tmp;
-                scanned = tmp.length;
-                foundClose = true;
-                break;
-              }
-            }
+          const end = this._findBlockEnd(str, start, openTag, closeTag);
+          if (end >= 0) {
+            block = str.slice(start, end + 1);
+            scanned = block.length;
+            foundClose = true;
           }
           // Mismatched/unclosed block tag: throw 45821 only when the open tag
           // is otherwise well-formed (a valid condition/literal). Malformed
@@ -360,7 +370,44 @@ export default class Sluz {
       prevIsIf = curIsIf;
     }
 
+    if (str.length <= BLOCK_CACHE_MAX_ENTRY) {
+      if (this._blockCache.size >= CACHE_LIMIT || this._blockCacheChars + str.length > BLOCK_CACHE_MAX_CHARS) {
+        this._blockCache.clear();
+        this._blockCacheChars = 0;
+      }
+      this._blockCache.set(str, blocks);
+      this._blockCacheChars += str.length;
+    }
     return blocks;
+  }
+
+  _findBlockEnd(str, start, openTag, closeTag) {
+    let depth = 1;
+    let from = start + openTag.length;
+
+    while (from <= str.length) {
+      const closePos = str.indexOf(closeTag, from);
+      if (closePos < 0) return -1;
+
+      let openPos = str.indexOf(openTag, from);
+      while (openPos >= 0 && openPos < closePos) {
+        const next = str[openPos + openTag.length];
+        if (next === undefined || !/[A-Za-z0-9_]/.test(next)) break;
+        openPos = str.indexOf(openTag, openPos + 1);
+      }
+
+      if (openPos >= 0 && openPos < closePos) {
+        depth++;
+        from = openPos + openTag.length;
+        continue;
+      }
+
+      depth--;
+      if (depth === 0) return closePos + closeTag.length - 1;
+      from = closePos + closeTag.length;
+    }
+
+    return -1;
   }
 
   // Walk parsed blocks: dispatch {tags} to _processBlock, append literal text
@@ -444,9 +491,11 @@ export default class Sluz {
     }
 
     // {foreach $array as $key => $value}...{/foreach}
-    const foreachMatch = str.match(this._foreachRe);
-    if (str.startsWith(this._foreachOpen) && foreachMatch) {
-      return this._foreachBlock(foreachMatch[1], foreachMatch[2], foreachMatch[3], foreachMatch[4]);
+    if (str.startsWith(this._foreachOpen)) {
+      const foreachMatch = str.match(this._foreachRe);
+      if (foreachMatch) {
+        return this._foreachBlock(foreachMatch[1], foreachMatch[2], foreachMatch[3], foreachMatch[4]);
+      }
     }
 
     // {literal}raw content{/literal} — returned verbatim
@@ -476,6 +525,14 @@ export default class Sluz {
 
   // Resolve {$var} with optional pipe modifiers, dotted paths, and "default:" fallback
   _variableBlock(str) {
+    if (!str.includes('|')) {
+      const ret = this._arrayDive(str, this.tplVars);
+      if (Array.isArray(ret)) return 'ARRAY';
+      if (ret && typeof ret === 'object') return 'HASH';
+      if (ret != null) return this._esc(ret);
+      return '';
+    }
+
     const pipeParts = this._splitRespectingQuotes(str, '|');
     const key = pipeParts[0];
     const modStr = pipeParts.slice(1).join('|');
@@ -816,27 +873,60 @@ export default class Sluz {
   _peval(str) {
     // Smarty uses === for equality but JS triple-equals would reject
     // different types, so soften it to == for template compatibility
-    str = str.replace(/===/g, '==');
-	// Quick path: if the expression is a plain literal or simple reference,
+    if (str.includes('===')) str = str.replace(/===/g, '==');
+    // Quick path: if the expression is a plain literal or simple reference,
     // resolve it without invoking the Function constructor
     const opt = this._microOptimize(str);
     if (opt !== undefined) return [opt, 0];
 
-    // Convert template variable references ($foo) to __S_prefix_foo lookups
-    const code = this._convertVars(str);
-    // Compile (and cache) a Function bound to the scope object and modifier
-    // functions. Identical conditions inside loops reuse the cached fn so we
-    // only pay the Function() cost once per unique expression string.
-    let fn = this._fnCache.get(code);
-    if (!fn) {
-      fn = new Function('__S', ...this._fnNames, `"use strict"; return (${code})`);
-      this._fnCache.set(code, fn);
+    let plan = this._exprCache.get(str);
+    if (!plan) {
+      plan = this._exprCacheOld.get(str);
+      if (plan) {
+        if (this._exprCache.size >= CACHE_LIMIT) {
+          this._exprCacheOld = this._exprCache;
+          this._exprCache = new Map();
+        }
+        this._exprCache.set(str, plan);
+      }
+    }
+    if (!plan) {
+      // Convert template variable references ($foo) to __S_prefix_fo lookups
+      const code = this._convertVars(str);
+      // Compile (and cache) a Function bound to the scope object and modifier
+      // functions. Identical conditions inside loops reuse the cached fn so we
+      // only pay the Function() cost once per unique expression string.
+      let fn = this._fnCache.get(code);
+      if (!fn) {
+        fn = this._fnCacheOld.get(code);
+        if (fn) {
+          if (this._fnCache.size >= CACHE_LIMIT) {
+            this._fnCacheOld = this._fnCache;
+            this._fnCache = new Map();
+          }
+          this._fnCache.set(code, fn);
+        }
+      }
+      if (!fn) {
+        fn = new Function('__S', ...this._fnNames, `"use strict"; return (${code})`);
+        if (this._fnCache.size >= CACHE_LIMIT) {
+          this._fnCacheOld = this._fnCache;
+          this._fnCache = new Map();
+        }
+        this._fnCache.set(code, fn);
+      }
+      plan = { fn };
+      if (this._exprCache.size >= CACHE_LIMIT) {
+        this._exprCacheOld = this._exprCache;
+        this._exprCache = new Map();
+      }
+      this._exprCache.set(str, plan);
     }
 
     // The eval scope (this.__S) is kept in sync incrementally by assign()
     // and _foreachBlock, so there's nothing to rebuild here.
     try {
-      return [fn(this.__S, ...this._fnRefs), 0];
+      return [plan.fn(this.__S, ...this._fnRefs), 0];
     } catch {
       return [undefined, -1];
     }
@@ -853,8 +943,14 @@ export default class Sluz {
     if (Object.prototype.hasOwnProperty.call(haystack, needle)) {
       return haystack[needle];
     }
+    if (!needle.includes('.')) return undefined;
 
-    const parts = needle.split('.');
+    let parts = this._pathCache.get(needle);
+    if (!parts) {
+      parts = needle.split('.');
+      if (this._pathCache.size >= CACHE_LIMIT) this._pathCache.clear();
+      this._pathCache.set(needle, parts);
+    }
     let arr = haystack;
 
     for (const elem of parts) {

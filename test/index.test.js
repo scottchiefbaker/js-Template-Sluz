@@ -825,3 +825,59 @@ describe('set_delimiters errors', () => {
   });
 });
 
+describe('performance cache behavior', () => {
+  test('reparse reflects reassigned values', () => {
+    const s = new Sluz();
+    s.assign('value', 'one');
+    expect(s.parse('{$value}')).toBe('one');
+    s.assign('value', 'two');
+    expect(s.parse('{$value}')).toBe('two');
+  });
+
+  test('delimiter changes invalidate cached blocks', () => {
+    const s = new Sluz();
+    s.assign('value', 'scott');
+    expect(s.parse('[{$value|upper}]')).toBe('[SCOTT]');
+    s.set_delimiters('[', ']');
+    expect(s.parse('[{$value|upper}]')).toBe('[{$value|upper}]');
+  });
+
+  test('expression plans invalidate when modifiers change', () => {
+    const s = new Sluz();
+    s.assign('n', 2);
+    s.registerModifier('scale', v => Number(v) * 2);
+    expect(String(s.parse('{scale($n)}'))).toBe('4');
+    s.registerModifier('scale', v => Number(v) * 3);
+    expect(String(s.parse('{scale($n)}'))).toBe('6');
+  });
+
+  test('expression plans execute cached functions each time', () => {
+    const s = new Sluz();
+    let calls = 0;
+    s.registerModifier('tick', () => ++calls);
+    expect(String(s.parse('{tick()}'))).toBe('1');
+    expect(String(s.parse('{tick()}'))).toBe('2');
+  });
+
+  test('unselected malformed branches remain lazy', () => {
+    const s = new Sluz();
+    s.assign('flag', 0);
+    expect(s.parse('{if $flag}{unknown}{/if}')).toBe('');
+    s.assign('flag', 1);
+    expect(() => s.parse('{if $flag}{unknown}{/if}')).toThrow(/73467/);
+  });
+
+  test('dotted paths preserve direct-key precedence and live values', () => {
+    const s = new Sluz();
+    s.assign('a.b', 'direct');
+    s.assign('a', { b: 'nested' });
+    expect(s.parse('{$a.b}')).toBe('direct');
+
+    const data = { value: { count: 1 } };
+    s.assign('data', data);
+    expect(s.parse('{$data.value.count}')).toBe('1');
+    data.value.count = 2;
+    expect(s.parse('{$data.value.count}')).toBe('2');
+  });
+});
+

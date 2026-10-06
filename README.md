@@ -3,6 +3,13 @@
 A JavaScript templating engine with Smarty-like syntax. Zero dependencies,
 single source file, and lite.
 
+## ✨ Features
+
+- Lite. ~17 KB minified, ~6 KB gzipped
+- Zero dependencies, single source file
+- Smarty-like syntax (`{$var}`, `{if}`, `{foreach}`)
+- Works in Node and the browser (ESM + global builds)
+
 ## 📦 Installation
 
 ```bash

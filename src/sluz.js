@@ -287,7 +287,14 @@ export default class Sluz {
           const ot = openTagMatch[1];
           const openTag = L + ot;
           const closeTag = L + '/' + ot + R;
-          const end = this._findBlockEnd(str, start, openTag, closeTag);
+          let end = this._findBlockEnd(str, start, openTag, closeTag);
+          // A literal payload may itself contain {literal} without a matching
+          // nested close. Fall back to the first {/literal} as the outer close
+          // (mirrors sluz.class.php first_literal_close handling).
+          if (end < 0 && ot === 'literal') {
+            const firstClose = str.indexOf(closeTag, start + openTag.length);
+            if (firstClose >= 0) end = firstClose + closeTag.length - 1;
+          }
           if (end >= 0) {
             block = str.slice(start, end + 1);
             scanned = block.length;
@@ -591,7 +598,13 @@ export default class Sluz {
             const [line, col] = this._getCharLocation(this.charPos);
             throw new SluzError(`Unknown function call <code>${func}</code> on line #${line}`, 47204);
           }
-          pre = fn(...params);
+          try {
+            pre = fn(...params);
+          } catch (e) {
+            if (e instanceof SluzError) throw e;
+            const [line] = this._getCharLocation(this.charPos);
+            throw new SluzError(`Exception in modifier <code>${func}</code> on line #${line}`, 79134);
+          }
         }
       }
 

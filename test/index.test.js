@@ -37,6 +37,7 @@ sluz.registerModifier('join_comma', (arr, sep = ', ') => Array.prototype.join.ca
 sluz.registerModifier('hello_world', () => 'Hello world');
 sluz.registerModifier('return_false', () => 0);
 sluz.registerModifier('return_null', () => undefined);
+sluz.registerModifier('throws_exception', () => { throw new Error('boom'); });
 
 // -------------------------------------------------------------------
 // Test helpers
@@ -154,6 +155,9 @@ sluzTest('{$y|join_comma:","}', '2,4,6', 'Custom function #7 - Function with str
 sluzTest('{$y|join_comma:"\'"}', "2'4'6", 'Custom function #8 - Function with string param pipe single quote');
 sluzTest('{$y|join_comma:"; "}', "2; 4; 6", 'Custom function #9 - Function with string param and space');
 sluzTest("{\$y|join_comma:\"\t\"}", "2\t4\t6", 'Custom function #10 - Function with string param and tab');
+test('Custom function #13 - Exception in modifier throws 79134', () => {
+  expect(() => sluz.parse('{$word|throws_exception}')).toThrow(/79134/);
+});
 
 // -------------------------------------------------------------------
 // Function blocks
@@ -333,6 +337,10 @@ sluzTest('{}'                                    , '{}'                 , 'Liter
 sluzTest('{literal}\nfoo\n{/literal}', 'foo', 'Literal #8 - Standalone literal block strips line \\n');
 sluzTest('x{literal}\nfoo\n{/literal}', 'x\nfoo', 'Literal #9 - Inline literal (open) keeps \\n');
 sluzTest('{literal}\nfoo\n{/literal}y', 'foo\ny', 'Literal #10 - Inline literal (close) keeps \\n');
+sluzTest('{literal}{literal}{/literal}', '{literal}', 'Literal #11 - Raw {literal}');
+sluzTest('{literal}{literal}{/literal}x', '{literal}x', 'Literal #12 - Raw {literal}x');
+sluzTest('x{literal}{literal}{/literal}', 'x{literal}', 'Literal #13 - Raw x{literal}');
+sluzTest('x{literal}{literal}{/literal}x', 'x{literal}x', 'Literal #14 - Raw x{literal}x');
 
 // -------------------------------------------------------------------
 // Whitespace-padded brackets tests

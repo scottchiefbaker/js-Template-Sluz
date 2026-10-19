@@ -155,6 +155,15 @@ sluzTest('{$y|join_comma:","}', '2,4,6', 'Custom function #7 - Function with str
 sluzTest('{$y|join_comma:"\'"}', "2'4'6", 'Custom function #8 - Function with string param pipe single quote');
 sluzTest('{$y|join_comma:"; "}', "2; 4; 6", 'Custom function #9 - Function with string param and space');
 sluzTest("{\$y|join_comma:\"\t\"}", "2\t4\t6", 'Custom function #10 - Function with string param and tab');
+test('Custom function #14 - Unquoted syntax-invalid param throws 31558', () => {
+  expect(() => sluz.parse('{$y|join_comma:;}')).toThrow(/31558/);
+});
+test('Custom function #15 - Unquoted unknown identifier param throws 31558', () => {
+  expect(() => sluz.parse('{$y|join_comma:abc}')).toThrow(/31558/);
+});
+sluzTest('{$y|join_comma:0}', '20406', 'Custom function #16 - Unquoted zero param is kept');
+sluzTest('{$y|join_comma:-1}', '2-14-16', 'Custom function #17 - Unquoted negative number param');
+sluzTest('{$y|join_comma:1.5}', '21.541.56', 'Custom function #18 - Unquoted decimal param');
 test('Custom function #13 - Exception in modifier throws 79134', () => {
   expect(() => sluz.parse('{$word|throws_exception}')).toThrow(/79134/);
 });

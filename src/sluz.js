@@ -143,7 +143,14 @@ export default class Sluz {
     this._tokenIfRe = new RegExp(`^${eL}(?:if|elseif)\\s+(.+?)${eR}$`);
     this._ifSimpleRe = new RegExp(`${eL}if (.+?)${eR}([\\s\\S]*)${eL}\\/if${eR}`, 's');
     this._ifStartReGlobal = new RegExp(`^${eL}if\\b`);
-    this._foreachStripRe = new RegExp(`^${escapeRegex(L)}foreach .+?${escapeRegex(R)}([\\s\\S]*)${escapeRegex(L)}\\/foreach${escapeRegex(R)}$`);
+    // A control block whose closing tag sits on its own line ends with a
+    // newline followed by the close tag — that newline is structural, so the
+    // newline after the block is swallowed to keep input -> output parity.
+    this._newlineEndRe = new RegExp(`\\n${eL}\\/\\w+${eR}$`);
+    // An {if} with no payload at all, e.g. {if $x}{/if} or {if $x}{else}{/if}.
+    // The tags are adjacent so there is no payload, but the closing tag still
+    // sits on a line of its own, so the newline after it is swallowed too.
+    this._emptyIfRe = new RegExp(`^${eL}if [^${eR}]*${eR}(?:${eL}else${eR}|${eL}elseif [^${eR}]*${eR})*${eL}\\/if${eR}$`);
   }
 
   // Assign one or more template variables — key/value pair, multiple pairs, or batch object
@@ -358,21 +365,24 @@ export default class Sluz {
       blocks.push([text, i]);
     }
 
-    // Strip the leading newline from blocks that follow {if}/{for} so the
-    // rendered HTML doesn't have an extra blank line after control tags
+    // If the *previous* block was an {if} or {foreach} we remove one leading
+    // \n from the current block to maintain parity between input and output
+    // whitespace. A control block only counts when its closing tag sits on
+    // its own line (so the block already ends with a newline of its own) or
+    // when it has no payload at all. Inline blocks keep the newline that
+    // follows them because it is content, not formatting.
     let prevIsIf = false;
     for (let bi = 0; bi < blocks.length; bi++) {
       const bstr = blocks[bi][0];
-      const curIsIf = this._ifStartRe.test(bstr) || this._forStartRe.test(bstr);
+      let curIsIf = this._ifStartRe.test(bstr) || this._forStartRe.test(bstr);
+      if (curIsIf && (bstr.includes(this._close_if) || bstr.includes(this._close_foreach))) {
+        curIsIf = this._newlineEndRe.test(bstr);
+        if (!curIsIf && this._ifStartRe.test(bstr)) {
+          curIsIf = this._emptyIfRe.test(bstr);
+        }
+      }
       if (prevIsIf) {
-        let shouldStrip = 1;
-        const foreachMatch = blocks[bi - 1][0].match(this._foreachStripRe);
-        if (foreachMatch) {
-          shouldStrip = foreachMatch[1].endsWith('\n') ? 1 : 0;
-        }
-        if (shouldStrip) {
-          blocks[bi][0] = this._ltrimOne(bstr, '\n');
-        }
+        blocks[bi][0] = this._ltrimOne(bstr, '\n');
       }
       prevIsIf = curIsIf;
     }

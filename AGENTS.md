@@ -37,7 +37,7 @@ Flags: `-n 100000` / `--iterations <n>` (or a bare number) sets the iteration co
 ## Conventions
 
 - Version source of truth is `export const VERSION` in `src/sluz.js`. The `prebuild`/`prepublishOnly` npm hooks run `scripts/sync-version.js` to write it into `package.json` automatically — bump the version in `src/sluz.js`, never directly in `package.json` (do not use `npm version`; it would drift out of sync)
-- ESM only — all imports use `.js` extensions
+- Source is ESM only — all imports use `.js` extensions. No CommonJS build exists; the global IIFE build is generated from the same source by esbuild
 - Template errors throw `SluzError` with numeric `code` property
 - `registerModifier` refuses to override built-in `escape`/`noescape` (throws `SluzError` code 47204)
 - `default:` is NOT a registered modifier — it's special-cased inside `_variableBlock()`, and checks `_isNothing()` (undefined/null/empty string, but not `0` or objects). Chained modifiers after it receive the default/resolved value, so `{$missing|default:'hi'|upper}` → `HI`

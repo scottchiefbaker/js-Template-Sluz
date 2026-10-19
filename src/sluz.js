@@ -598,7 +598,20 @@ export default class Sluz {
           if (paramStr.length) {
             const commaLimbs = this._splitRespectingQuotes(paramStr, ',');
             for (const limb of commaLimbs) {
-              const [v] = this._peval(limb);
+              // A param that fails to evaluate (e.g. bare `abc`, `;`) is an
+              // unquoted non-expression. _peval can also throw SyntaxError
+              // from new Function, so treat that the same way.
+              let v;
+              let err;
+              try {
+                [v, err] = this._peval(limb);
+              } catch {
+                err = -1;
+              }
+              if (err !== 0) {
+                const [line] = this._getCharLocation(this.charPos);
+                throw new SluzError(`Unquoted function parameter <code>${limb}</code> on line #${line}`, 31558);
+              }
               params.push(v);
             }
           }

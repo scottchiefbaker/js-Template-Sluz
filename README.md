@@ -330,4 +330,5 @@ try {
 | `73467`    | Unknown block type             |
 | `18933`    | Unknown tag / invalid eval     |
 | `47204`    | Unknown modifier function      |
+| `31558`    | Unquoted function parameter    |
 | `95320`    | If/else parsing error          |

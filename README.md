@@ -109,7 +109,7 @@ must be different characters.
 
 ```js
 sluz.set_delimiters('[', ']');
-sluz.parse('[$name]'); // resolves {$name}
+sluz.parse('[$name]'); // resolves $name
 ```
 
 All tag types work with any delimiter pair: variables, modifiers,
@@ -119,8 +119,7 @@ if/elseif/else, foreach, literal, comments, and expression blocks.
 sluz.set_delimiters('[', ']');
 sluz.assign('items', ['a', 'b', 'c']);
 
-sluz.parse('[* loop through items *][foreach $items as $x][$x] [/foreach]');
-// a b c
+sluz.parse('[* loop through items *][foreach $items as $x][$x] [/foreach]'); // a b c
 ```
 
 ### `setAutoEscape(bool)`
@@ -209,23 +208,15 @@ Explicit `|escape` still works and won't double-escape:
 sluz.parse('{$html|escape}');  // still single-escaped
 ```
 
-Chaining with auto-escape: the auto-escape applies *after* all explicit
-modifiers run, so it won't interfere with transformations:
-
-```js
-sluz.parse('{$safe|upper}');  // uppercase then auto-escaped
-// <B> &lt;B&gt;
-```
-
 ### Custom modifiers
 
 ```js
-function greet(name) {
+function greet_modifier(name) {
     return `Howdy, ${name}!`;
 }
 
-sluz.registerModifier('greet', greet);
-sluz.parse('{$name|greet}');               // Howdy, Scott!
+sluz.registerModifier('greet', greet_modifier);
+sluz.parse('{$name|greet}');  // Howdy, Scott!
 ```
 
 ---

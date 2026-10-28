@@ -65,8 +65,7 @@ Or as an ES module import:
 
 ### assign()
 
-Variables are inserted with `assign()` function. Dotted paths resolve nested
-objects and arrays.
+Variables are inserted with `assign()` function.
 
 ```js
 sluz.assign('color', 'blue');                      // Scalar
@@ -76,7 +75,8 @@ sluz.assign('info', { color: 'yellow', age: 43 }); // Hash
 
 ### parse()
 
-Templates are rendered using the `parse()` function.
+Templates are rendered using the `parse()` function. Dotted paths resolve
+nested objects and arrays.
 
 ```js
 sluz.parse('{$color}');    // 'blue'

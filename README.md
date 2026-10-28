@@ -341,6 +341,6 @@ try {
 | `31558`    | Unquoted or invalid parameter / default value      |
 | `79134`    | Exception thrown inside a modifier                 |
 | `95320`    | If/else parsing error                              |
-| `1`        | `set_delimiters()`: delimiters must be strings     |
-| `2`        | `set_delimiters()`: delimiters must be single chars|
-| `3`        | `set_delimiters()`: delimiters must be different   |
+| `51234`    | `set_delimiters()`: delimiters must be strings     |
+| `51235`    | `set_delimiters()`: delimiters must be single chars|
+| `51236`    | `set_delimiters()`: delimiters must be different   |

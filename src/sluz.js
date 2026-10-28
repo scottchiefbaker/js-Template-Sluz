@@ -195,13 +195,13 @@ export default class Sluz {
   // Set alternate tag delimiters. Both must be single, distinct characters.
   set_delimiters(left, right) {
     if (typeof left !== 'string' || typeof right !== 'string') {
-      throw new SluzError('Delimiters must be strings', 1);
+      throw new SluzError('Delimiters must be strings', 51234);
     }
     if (left.length !== 1 || right.length !== 1) {
-      throw new SluzError('Delimiters must be single characters', 2);
+      throw new SluzError('Delimiters must be single characters', 51235);
     }
     if (left === right) {
-      throw new SluzError('Left and right delimiters must be different', 3);
+      throw new SluzError('Left and right delimiters must be different', 51236);
     }
     this.left_delim = left;
     this.right_delim = right;

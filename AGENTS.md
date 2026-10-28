@@ -1,6 +1,6 @@
 # template-sluz
 
-Single-package ESM templating engine (Smarty-like syntax). Zero dependencies. Node >= 18.
+Single-package ESM templating engine (Smarty-like syntax). Zero dependencies. Node >= 22.
 
 ## Commands
 

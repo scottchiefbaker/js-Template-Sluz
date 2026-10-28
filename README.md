@@ -171,7 +171,8 @@ colon (`:`), multiple arguments are comma-separated.
 ### Default values
 
 The `default:` modifier returns a fallback when the variable is empty
-(undefined, null, or empty string):
+(undefined, null, or empty string). The fallback must be a quoted string or
+a numeric literal; bare words and variables are rejected with error `31558`:
 
 ```js
 sluz.parse('{$name|default:"N/A"}');       // Scott (unchanged)

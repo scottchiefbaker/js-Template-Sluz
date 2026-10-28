@@ -16,6 +16,9 @@ const CACHE_LIMIT = 512;
 const BLOCK_CACHE_MAX_CHARS = 1024 * 1024;
 const BLOCK_CACHE_MAX_ENTRY = 64 * 1024;
 
+// PHP is_numeric()-style numeric literal (used for default: validation)
+const NUMERIC_LITERAL_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
 // Escape regex-special characters so the string can be used as a literal pattern
 function escapeRegex(s) {
   return s.replace(/[\\.*+?()\[\]{}|^$]/g, ch => ESCAPE_RE[ch]);
@@ -570,8 +573,37 @@ export default class Sluz {
         // default is never consulted, so only the chained modifiers apply.
         const afterDefault = modStr.replace(/^.*?default:/, '');
         const dParts = this._splitRespectingQuotes(afterDefault, '|');
+        const rawDefault = (dParts[0] ?? '').trim();
+
+        // The fallback must be a quoted string literal or a numeric literal.
+        // Anything else (bare words, variables, expressions) is invalid.
+        const q = rawDefault[0];
+        const isQuotedStr = rawDefault.length >= 2 && (q === '"' || q === "'")
+          && rawDefault[rawDefault.length - 1] === q;
+        const isNumeric = !isQuotedStr && NUMERIC_LITERAL_RE.test(rawDefault);
+        if (!isQuotedStr && !isNumeric) {
+          const [line] = this._getCharLocation(this.charPos);
+          throw new SluzError(`Unquoted default value <code>${rawDefault}</code> on line #${line}`, 31558);
+        }
+
         if (isNothing) {
-          const [dval] = this._peval(dParts[0]);
+          let dval;
+          if (isNumeric) {
+            // Evaluate the already-validated numeric literal directly so forms
+            // like `.5` don't get mangled by the PHP-dot concat conversion.
+            dval = Number(rawDefault);
+          } else {
+            let err;
+            try {
+              [dval, err] = this._peval(rawDefault);
+            } catch {
+              err = -1;
+            }
+            if (err !== 0) {
+              const [line] = this._getCharLocation(this.charPos);
+              throw new SluzError(`Invalid default value <code>${rawDefault}</code> on line #${line}`, 31558);
+            }
+          }
           pre = dval;
         } else {
           pre = tmp ?? '';
@@ -598,6 +630,14 @@ export default class Sluz {
           if (paramStr.length) {
             const commaLimbs = this._splitRespectingQuotes(paramStr, ',');
             for (const limb of commaLimbs) {
+              // Bare identifiers such as `undefined`, `NaN`, or `Math` resolve
+              // to JS globals, but PHP has no such constants — reject them.
+              const bare = limb.trim();
+              if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(bare) && !/^(?:true|false|null)$/.test(bare)) {
+                const [line] = this._getCharLocation(this.charPos);
+                throw new SluzError(`Unquoted function parameter <code>${limb}</code> on line #${line}`, 31558);
+              }
+
               // A param that fails to evaluate (e.g. bare `abc`, `;`) is an
               // unquoted non-expression. _peval can also throw SyntaxError
               // from new Function, so treat that the same way.

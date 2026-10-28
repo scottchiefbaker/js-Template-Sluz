@@ -40,10 +40,10 @@ Flags: `-n 100000` / `--iterations <n>` (or a bare number) sets the iteration co
 - Source is ESM only — all imports use `.js` extensions. No CommonJS build exists; the global IIFE build is generated from the same source by esbuild
 - Template errors throw `SluzError` with numeric `code` property
 - `registerModifier` refuses to override built-in `escape`/`noescape` (throws `SluzError` code 47204)
-- `default:` is NOT a registered modifier — it's special-cased inside `_variableBlock()`, and checks `_isNothing()` (undefined/null/empty string, but not `0` or objects). Chained modifiers after it receive the default/resolved value, so `{$missing|default:'hi'|upper}` → `HI`
+- `default:` is NOT a registered modifier — it's special-cased inside `_variableBlock()`, and checks `_isNothing()` (undefined/null/empty string, but not `0` or objects). Chained modifiers after it receive the default/resolved value, so `{$missing|default:'hi'|upper}` → `HI`. The fallback must be a quoted string or numeric literal (error 31558 otherwise)
 - `assign()` accepts key/value pairs or a single object batch-assign
 - Auto-escape of all `{$var}` output is toggled via `setAutoEscape(bool)` (default off); `{$var|escape}`/`{$var|noescape}` opt out of / into double-escaping as expected
-- Custom modifiers registered via `registerModifier(name, fn)` — first arg is the value, subsequent args from `:` params
+- Custom modifiers registered via `registerModifier(name, fn)` — first arg is the value, subsequent args from `:` params. Unquoted non-numeric params and bare JS globals (`undefined`, `Math`, `NaN`, …) throw 31558
 - Alternate delimiters via `set_delimiters(left, right)` — both must be single, distinct chars; cache rebuilds automatically
 - `$__FOREACH_FIRST`, `$__FOREACH_LAST`, `$__FOREACH_INDEX` are reserved loop variables
 

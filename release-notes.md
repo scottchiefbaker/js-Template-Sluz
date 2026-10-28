@@ -43,6 +43,7 @@ Review the output to make sure no unwanted files are included.
 ### 4. Publish
 
 ```bash
+npm login
 npm publish
 ```
 

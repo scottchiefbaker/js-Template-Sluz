@@ -16,6 +16,8 @@ single source file, and lite.
 npm install template-sluz
 ```
 
+Requires **Node >= 22** (browser builds have no Node dependency).
+
 ## 🚀 Quick Start
 
 ```js
@@ -72,6 +74,9 @@ sluz.parse('{$person.colors.0}');   // red
 sluz.parse('{$missing}');           // '' (empty string)
 ```
 
+Whitespace adjacent to a delimiter is not allowed: `{ $name }` throws error
+`50981`. Use `{$name}` syntax to indicate a parseable block.
+
 ### assign()
 
 Accepts key/value pairs or a single object:
@@ -89,6 +94,14 @@ sluz.assign('info', { color: 'yellow', age: 43 }); // Hash
 ### `new Sluz()`
 
 Creates a new template engine instance.
+
+### `Sluz.version` / `VERSION`
+
+The current library version is available at run time.
+
+```js
+console.log(Sluz.version); // e.g. "0.9.8"
+```
 
 ### `assign(key, value)` / `assign(object)`
 
@@ -136,7 +149,8 @@ sluz.parse('{$xss}'); // &lt;script&gt;...
 
 Registers a custom modifier function. The function receives the variable value
 as the first argument, followed by any user-supplied arguments from the
-template.
+template. The built-in `escape` and `noescape` modifiers cannot be overridden
+(attempting to do so throws error `47204`).
 
 ```js
 sluz.registerModifier('truncate', (s, n) => String(s).slice(0, n));
@@ -315,12 +329,17 @@ try {
 }
 ```
 
-| Error Code | Description                    |
-|------------|--------------------------------|
-| `45821`    | Unclosed tag                   |
-| `48724`    | Missing comment close `*}`     |
-| `73467`    | Unknown block type             |
-| `18933`    | Unknown tag / invalid eval     |
-| `47204`    | Unknown modifier function      |
-| `31558`    | Unquoted function parameter    |
-| `95320`    | If/else parsing error          |
+| Error Code | Description                                        |
+|------------|----------------------------------------------------|
+| `45821`    | Unclosed tag                                       |
+| `48724`    | Missing comment close `*}`                         |
+| `50981`    | Whitespace adjacent to a delimiter                 |
+| `73467`    | Unknown block type                                 |
+| `18933`    | Unknown tag / invalid eval                         |
+| `47204`    | Unknown modifier function / reserved modifier      |
+| `31558`    | Unquoted or invalid parameter / default value      |
+| `79134`    | Exception thrown inside a modifier                 |
+| `95320`    | If/else parsing error                              |
+| `1`        | `set_delimiters()`: delimiters must be strings     |
+| `2`        | `set_delimiters()`: delimiters must be single chars|
+| `3`        | `set_delimiters()`: delimiters must be different   |

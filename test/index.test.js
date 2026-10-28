@@ -87,6 +87,27 @@ sluzTest('{$empty_string|default:\'123\'}', '123'  , 'Basic #17 - Default - Empt
 sluzTest('{$null|default:\'123\'}'        , '123'  , 'Basic #18 - Default - Null');
 sluzTest('{$bogus_var|default:"?*%.|"}'   , '?*%.|', 'Basic #19 - Default - non word char');
 
+// Default values must be quoted strings or numeric literals
+test('Basic #19a - Unquoted default value throws 31558', () => {
+  expect(() => sluz.parse('{$bogus_var|default:foo}')).toThrow(/31558/);
+});
+test('Basic #19b - Empty default value throws 31558', () => {
+  expect(() => sluz.parse('{$bogus_var|default:}')).toThrow(/31558/);
+});
+test('Basic #19c - Variable default value throws 31558', () => {
+  expect(() => sluz.parse('{$bogus_var|default:$first}')).toThrow(/31558/);
+});
+test('Basic #19d - Unquoted default with chained modifier throws 31558', () => {
+  expect(() => sluz.parse('{$bogus_var|default:hi|upper}')).toThrow(/31558/);
+});
+sluzTest('{$bogus_var|default:0}', '0', 'Basic #19e - Numeric default is kept');
+sluzTest('{$bogus_var|default:-1}', '-1', 'Basic #19f - Negative numeric default');
+sluzTest('{$bogus_var|default:.5}', '0.5', 'Basic #19g - Leading-dot decimal default');
+sluzTest('{$bogus_var|default:1e3}', '1000', 'Basic #19h - Exponent numeric default');
+sluzTest('{$bogus_var|default:""}', '', 'Basic #19i - Empty quoted default is valid');
+sluzTest("{$bogus_var|default:''|upper}", '', 'Basic #19j - Empty quoted default with chained modifier');
+sluzTest('{$bogus_var|default:1.}', '1', 'Basic #19k - Trailing-dot numeric default');
+
 // Error tests
 test('Basic #20 - Unclosed block', () => {
   expect(() => sluz.parse('{foo')).toThrow(/45821/);
@@ -164,6 +185,15 @@ test('Custom function #15 - Unquoted unknown identifier param throws 31558', () 
 sluzTest('{$y|join_comma:0}', '20406', 'Custom function #16 - Unquoted zero param is kept');
 sluzTest('{$y|join_comma:-1}', '2-14-16', 'Custom function #17 - Unquoted negative number param');
 sluzTest('{$y|join_comma:1.5}', '21.541.56', 'Custom function #18 - Unquoted decimal param');
+test('Custom function #19 - Bare JS global undefined throws 31558', () => {
+  expect(() => sluz.parse('{$y|join_comma:undefined}')).toThrow(/31558/);
+});
+test('Custom function #20 - Bare JS global Math throws 31558', () => {
+  expect(() => sluz.parse('{$y|join_comma:Math}')).toThrow(/31558/);
+});
+test('Custom function #21 - Bare JS global NaN throws 31558', () => {
+  expect(() => sluz.parse('{$y|join_comma:NaN}')).toThrow(/31558/);
+});
 test('Custom function #13 - Exception in modifier throws 79134', () => {
   expect(() => sluz.parse('{$word|throws_exception}')).toThrow(/79134/);
 });

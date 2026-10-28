@@ -63,29 +63,30 @@ Or as an ES module import:
 
 ## 📝 Variables
 
-Variables are inserted with `{$varname}`. Dotted paths resolve nested objects
-and arrays.
-
-```js
-sluz.assign('person', { name: { first: 'Jane' }, colors: ['red', 'green'] });
-
-sluz.parse('{$person.name.first}'); // Jane
-sluz.parse('{$person.colors.0}');   // red
-sluz.parse('{$missing}');           // '' (empty string)
-```
-
-Whitespace adjacent to a delimiter is not allowed: `{ $name }` throws error
-`50981`. Use `{$name}` syntax to indicate a parseable block.
-
 ### assign()
 
-Accepts key/value pairs or a single object:
+Variables are inserted with `assign()` function. Dotted paths resolve nested
+objects and arrays.
 
 ```js
 sluz.assign('color', 'blue');                      // Scalar
 sluz.assign('size', ['small', 'medium', 'large']); // Array
 sluz.assign('info', { color: 'yellow', age: 43 }); // Hash
 ```
+
+### parse()
+
+Templates are rendered using the `parse()` function.
+
+```js
+sluz.parse('{$color}');    // 'blue'
+sluz.parse('{$size.2}');   // 'large'
+sluz.parse('{$info.age}'); // 43
+sluz.parse('{$missing}');  // '' (empty string)
+```
+
+Whitespace adjacent to a delimiter is not allowed: `{ $name }` throws error
+`50981`.
 
 ---
 

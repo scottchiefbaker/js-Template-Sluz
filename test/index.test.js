@@ -859,27 +859,27 @@ describe('alternate delimiters', () => {
 describe('set_delimiters errors', () => {
   test('Error - multi-character left', () => {
     const s = new Sluz();
-    expect(() => s.set_delimiters('{{', '}')).toThrow(/single characters/);
+    expect(() => s.set_delimiters('{{', '}')).toThrow(/#51235.*single characters/);
   });
 
   test('Error - multi-character right', () => {
     const s = new Sluz();
-    expect(() => s.set_delimiters('{', '}}')).toThrow(/single characters/);
+    expect(() => s.set_delimiters('{', '}}')).toThrow(/#51235.*single characters/);
   });
 
   test('Error - identical delimiters', () => {
     const s = new Sluz();
-    expect(() => s.set_delimiters('X', 'X')).toThrow(/different/);
+    expect(() => s.set_delimiters('X', 'X')).toThrow(/#51236.*different/);
   });
 
   test('Error - empty string left', () => {
     const s = new Sluz();
-    expect(() => s.set_delimiters('', '}')).toThrow(/single characters/);
+    expect(() => s.set_delimiters('', '}')).toThrow(/#51235.*single characters/);
   });
 
   test('Error - non-string type', () => {
     const s = new Sluz();
-    expect(() => s.set_delimiters(1, 2)).toThrow(/strings/);
+    expect(() => s.set_delimiters(1, 2)).toThrow(/#51234.*strings/);
   });
 });
 

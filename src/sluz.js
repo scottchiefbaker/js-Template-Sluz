@@ -42,7 +42,7 @@ function _escapeHtml(v) {
 
 // Run-time version — the single source of truth. package.json "version" is
 // synced from this export by scripts/sync-version.js on build/publish.
-export const VERSION = '0.9.7';
+export const VERSION = '0.9.8';
 
 export default class Sluz {
   static version = VERSION;

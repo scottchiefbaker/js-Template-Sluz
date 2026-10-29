@@ -60,6 +60,11 @@ function sluzTest(input, expected, name) {
 test('exposes version matching package.json', () => {
   expect(VERSION).toBe(pkg.version);
   expect(Sluz.version).toBe(pkg.version);
+  expect(new Sluz().version).toBe(pkg.version);
+});
+
+test('instance version is read-only', () => {
+  expect(() => { new Sluz().version = 'nope'; }).toThrow(TypeError);
 });
 
 // -------------------------------------------------------------------

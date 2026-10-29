@@ -47,6 +47,11 @@ export const VERSION = '0.9.9';
 export default class Sluz {
   static version = VERSION;
 
+  // Instance-level mirror of the static version, so `new Sluz().version` works.
+  // A prototype getter keeps it out of each instance's own (enumerable) state
+  // and makes it read-only.
+  get version() { return VERSION; }
+
   // Create a new Sluz template engine instance
   constructor() {
     this.tplVars = {};

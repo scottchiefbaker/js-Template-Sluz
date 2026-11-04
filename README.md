@@ -16,23 +16,6 @@ single source file, and lite.
 npm install template-sluz
 ```
 
-Requires **Node >= 22** (browser builds have no Node dependency).
-
-## 🚀 Quick Start
-
-```js
-import Sluz from 'template-sluz';
-
-const sluz = new Sluz();
-sluz.assign('name', 'Scott');
-sluz.assign('user', { first: 'Jason', last: 'Doolis', age: 43 });
-
-console.log(sluz.parse('Hello {$name}')); // Hello Scott
-console.log(sluz.parse('{$user.first} {$user.last}')); // Jason Doolis
-```
-
----
-
 ## 🌐 Browser Usage
 
 Load Sluz from a CDN with a plain `<script>` tag (sets `window.Sluz`):
@@ -47,16 +30,19 @@ Load Sluz from a CDN with a plain `<script>` tag (sets `window.Sluz`):
 </script>
 ```
 
-Or as an ES module import:
+---
 
-```html
-<script type="module">
-    import Sluz from './js/sluz.min.js';
-    const sluz = new Sluz();
+## 🚀 Node
 
-    sluz.assign('user', { name: 'Alice', role: 'admin' });
-    document.body.innerHTML = sluz.parse("Welcome {$user.name} you are {$user.role}");
-</script>
+```js
+import Sluz from 'template-sluz';
+
+const sluz = new Sluz();
+sluz.assign('name', 'Scott');
+sluz.assign('user', { first: 'Jason', last: 'Doolis', age: 43 });
+
+console.log(sluz.parse('Hello {$name}')); // Hello Scott
+console.log(sluz.parse('{$user.first} {$user.last}')); // Jason Doolis
 ```
 
 ---

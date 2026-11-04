@@ -52,7 +52,7 @@ for (const [name, t] of Object.entries(templates)) {
     padR(desc, 30) +
     padL(String(ITERATIONS), 8) +
     padL(String(elapsed), 10) +
-    padL(perSec.toFixed(1), 10)
+    padL(perSec.toFixed(1), 12)
   );
 }
 

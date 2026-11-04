@@ -16,7 +16,7 @@ single source file, and lite.
 npm install template-sluz
 ```
 
-## 🌐 Browser Usage
+## 🌐 Browser
 
 Load Sluz from a CDN with a plain `<script>` tag (sets `window.Sluz`):
 

@@ -32,12 +32,101 @@ function _escapeHtml(v) {
   if (v === undefined || v === null) return '';
   if (Array.isArray(v)) return 'ARRAY';
   if (v && typeof v === 'object') return 'HASH';
-  return String(v)
+  const s = String(v);
+  // Single-regex fast path: only scan when a special char is present.
+  // Benchmark vars are plain text, so this avoids 5 replace passes.
+  if (!/[&<>"']/.test(s)) return s;
+  return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#x27;');
+}
+
+// Fast char-class helpers (charCodeAt path avoids RegExp on hot paths)
+function isWsChar(c) {
+  const code = c.charCodeAt(0);
+  return code === 32 || code === 9 || code === 10 || code === 13 || code === 12 || code === 11;
+}
+
+function isWordChar(code) {
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) || code === 95;
+}
+
+function isDigitChar(code) {
+  return code >= 48 && code <= 57;
+}
+
+// True when `inner` (content between delimiters) is a simple $var with
+// optional |modifiers, i.e. matches ^\$\w[\w.]*(\|.*)?$ without RegExp.
+function isSimpleVarInner(inner) {
+  if (inner.charCodeAt(0) !== 36) return false; // '$'
+  const n = inner.length;
+  if (n < 2) return false;
+  if (!isWordChar(inner.charCodeAt(1))) return false;
+  let i = 2;
+  while (i < n) {
+    const code = inner.charCodeAt(i);
+    if (isWordChar(code) || code === 46) { // word char or '.'
+      i++;
+      continue;
+    }
+    return code === 124; // '|' -> modifier chain, matches pipe variant
+  }
+  return true;
+}
+
+// Manual equivalents of the hot-path RegExps (avoid RegExp engine overhead).
+function isNumericLiteralMicro(s) {
+  // ^-?\d+(?:\.\d+)?$
+  let i = 0;
+  const n = s.length;
+  if (n === 0) return false;
+  if (s.charCodeAt(0) === 45) { // '-'
+    i = 1;
+    if (i >= n) return false;
+  }
+  let intDigits = 0;
+  while (i < n && isDigitChar(s.charCodeAt(i))) { i++; intDigits++; }
+  if (intDigits === 0) return false;
+  if (i === n) return true;
+  if (s.charCodeAt(i) !== 46) return false; // '.'
+  i++;
+  let fracDigits = 0;
+  while (i < n && isDigitChar(s.charCodeAt(i))) { i++; fracDigits++; }
+  return fracDigits > 0 && i === n;
+}
+
+function isWordRune(s) {
+  if (!s.length) return false;
+  for (let i = 0; i < s.length; i++) {
+    if (!isWordChar(s.charCodeAt(i))) return false;
+  }
+  return true;
+}
+
+// ^[A-Za-z_][A-Za-z0-9_]*$ (bare-identifier param check)
+function isBareIdentifier(s) {
+  const n = s.length;
+  if (n === 0) return false;
+  const c0 = s.charCodeAt(0);
+  const okFirst = (c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122) || c0 === 95;
+  if (!okFirst) return false;
+  for (let i = 1; i < n; i++) {
+    if (!isWordChar(s.charCodeAt(i))) return false;
+  }
+  return true;
+}
+
+// True when s is all ASCII digits (non-empty): ^\d+$
+function isAllDigits(s) {
+  if (!s.length) return false;
+  for (let i = 0; i < s.length; i++) {
+    if (!isDigitChar(s.charCodeAt(i))) return false;
+  }
+  return true;
 }
 
 // Run-time version — the single source of truth. package.json "version" is
@@ -76,6 +165,9 @@ export default class Sluz {
     this._exprCacheOld = new Map();
     this._pathCache = new Map();
     this._blockCache = new Map();
+    this._payloadCache = new Map();
+    this._ifRuleCache = new Map();
+    this._modPlanCache = new Map();
     this._blockCacheChars = 0;
     this._fnNames = [...this.modifiers.keys()];
     this._fnRefs = this._fnNames.map(n => this.modifiers.get(n));
@@ -117,6 +209,9 @@ export default class Sluz {
     const eL = escapeRegex(L);
     const eR = escapeRegex(R);
     this._blockCache.clear();
+    this._payloadCache.clear();
+    this._ifRuleCache.clear();
+    this._modPlanCache.clear();
     this._blockCacheChars = 0;
 
     this._close_if = L + '/if' + R;
@@ -193,6 +288,11 @@ export default class Sluz {
     this._fnCacheOld.clear();
     this._exprCache.clear();
     this._exprCacheOld.clear();
+    // Cached tagged blocks embed modifier function references, so they must be
+    // rebuilt when a modifier is (re)registered.
+    this._modPlanCache.clear();
+    this._payloadCache.clear();
+    this._ifRuleCache.clear();
     this._fnNames = [...this.modifiers.keys()];
     this._fnRefs = this._fnNames.map(n => this.modifiers.get(n));
   }
@@ -224,11 +324,49 @@ export default class Sluz {
     return _escapeHtml(v);
   }
 
-  // Parse a template string — tokenize into blocks then process each in sequence
+  // Parse a template string — tokenize into blocks then process each in sequence.
+  // Cache: the compiled closure for a template string is memoized so parse()
+  // on a hot template is a Map lookup + call, with no re-tokenization or
+  // re-validation. _blockCache is kept as the raw blocks store (used by
+  // _getBlocks for payload sub-parsing); compiled entries live alongside.
   parse(str) {
     this._sourceStr = str;
+    if (str.length <= BLOCK_CACHE_MAX_ENTRY) {
+      const entry = this._payloadCache.get(str);
+      if (entry !== undefined) return entry.fn(this);
+    }
     const blocks = this._getBlocks(str);
-    return this._processBlocks(blocks);
+    const tagged = this._makeTagged(blocks);
+    // Cache miss: build a closure and store it (if size allows).
+    if (str.length <= BLOCK_CACHE_MAX_ENTRY) {
+      if (this._payloadCache.size >= CACHE_LIMIT) this._payloadCache.clear();
+      this._payloadCache.set(str, { fn: (inst) => inst._processBlocksTagged(tagged) });
+    }
+    return this._processBlocksTagged(tagged);
+  }
+
+  // Attach kind (and, for variables, the inner text) to each tag block.
+  // Done once per template via the parse/if/foreach caches, so the render loop
+  // never slices a tag. The modifier plan itself is built lazily on first
+  // render of that block, preserving laziness of unselected branches.
+  _makeTagged(blocks) {
+    const tagged = new Array(blocks.length);
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      const str = b[0];
+      if (str && str[0] === this.left_delim) {
+        const kind = this._kindOfBlock(str);
+        if (kind === 1) {
+          tagged[i] = [str, b[1], 1,
+            str.slice(this.left_delim.length, str.length - this.right_delim.length)];
+        } else {
+          tagged[i] = [str, b[1], kind];
+        }
+      } else {
+        tagged[i] = b;
+      }
+    }
+    return tagged;
   }
 
   // -------------------------------------------------------------------
@@ -435,14 +573,68 @@ export default class Sluz {
     return -1;
   }
 
-  // Walk parsed blocks: dispatch {tags} to _processBlock, append literal text
-  _processBlocks(blocks) {
+  // Classify a tag block for the render loop:
+  // 1 = variable, 2 = if, 3 = foreach, 4 = literal, 5 = comment, 0 = other.
+  // Anything with an unexpected shape returns 0 so the full validator path
+  // runs and produces the original error codes (45821 / 50981 / 73467).
+  _kindOfBlock(str) {
+    const L = this.left_delim;
+    const R = this.right_delim;
+    if (str[0] !== L) return 0;
+    // Unterminated tag or whitespace adjacent to the closing delimiter must
+    // take the full path so the legacy error codes (45821 / 50981) fire.
+    if (!str.endsWith(R)) return 0;
+    const first = str[L.length];
+    if (first === '$') {
+      const inner = str.slice(L.length, str.length - R.length);
+      if (isWsChar(inner[inner.length - 1])) return 0;
+      return isSimpleVarInner(inner) ? 1 : 0;
+    }
+    if (first === '/') return 0;
+    if (first === '*') return 5; // {* comment *}
+    if (str.startsWith(this._ifOpen) && str.endsWith(this._close_if)) return 2;
+    if (str.startsWith(this._foreachOpen)) return 3;
+    if (str.startsWith(this._literalOpen)) return 4;
+    return 0;
+  }
+
+  _processBlocksTagged(blocks) {
+    const autoEscape = this.auto_escape;
     let html = '';
     for (const x of blocks) {
       const block = x[0];
       if (!block.length) continue;
-      if (block[0] === this.left_delim) {
-        html += this._processBlock(block, x[1]);
+      const kind = x[2];
+      if (kind === 1) {
+        this.charPos = x[1];
+        let plan = x[4];
+        if (plan === undefined) plan = x[4] = this._getModPlan(x[3]);
+        html += this._renderPlan(plan, autoEscape);
+      } else if (kind === 2) {
+        this.charPos = x[1];
+        html += this._ifBlock(block);
+      } else if (kind === 3) {
+        this.charPos = x[1];
+        const m = block.match(this._foreachRe);
+        if (m) html += this._foreachBlock(m[1], m[2], m[3], m[4]);
+        else html += this._processBlockFull(block);
+      } else if (kind === 4) {
+        this.charPos = x[1];
+        const m = block.match(this._literalRe);
+        if (m) html += m[1];
+        else html += this._processBlockFull(block);
+      } else if (kind === 5) {
+        // {* comment *} — dropped by _getBlocks on full templates, but payload
+        // sub-strings re-tokenized per render can still contain them.
+        this.charPos = x[1];
+        html += '';
+      } else if (kind === 0 && block[0] === this.left_delim) {
+        this.charPos = x[1];
+        html += this._processBlockFull(block);
+      } else if (kind === undefined && block[0] === this.left_delim) {
+        // Untagged payload block (from _getBlocks on if/foreach payload).
+        this.charPos = x[1];
+        html += this._processBlockFull(block);
       } else {
         html += block;
       }
@@ -450,21 +642,15 @@ export default class Sluz {
     return html;
   }
 
-  // Dispatch a {tag} to the right handler: variable, if, foreach, literal, expression
-  _processBlock(str, charPos) {
-    this.charPos = charPos;
+  // Full _processBlock logic (renamed — old name kept via wrapper for compat).
+  // Used for untagged blocks (expressions, close tags, literal text, etc.).
+  _processBlockFull(str) {
     const L = this.left_delim;
     const R = this.right_delim;
 
     // {* comment *} — nothing to render
     if (str.startsWith(this._comment_open)) { return ''; }
 
-    // Whitespace-adjacent delimiter rules (see whitespace.md): a genuine
-    // template tag ($var, control, close, or literal block) can never be the
-    // literal-text exemption below — it carries no unquoted braces or
-    // semicolons, and a literal block's braces always pair with a sub-tag —
-    // so it takes a fast path that peeks at the boundary chars instead of
-    // slicing out the inner content.
     const first = str[L.length];
     const isGenTag = first === '$'
       || first === '/'
@@ -474,23 +660,12 @@ export default class Sluz {
       || str.startsWith(this._literalOpen);
 
     if (isGenTag) {
-      // whitespace immediately inside either delimiter is a syntax error.
-      // ASCII char compares beat single-char \s regex tests on this hot path.
       const last = str[str.length - R.length - 1];
-      if (first === ' ' || first === '\t' || first === '\n' || first === '\r'
-        || first === '\f' || first === '\v'
-        || last === ' ' || last === '\t' || last === '\n' || last === '\r'
-        || last === '\f' || last === '\v') {
+      if (isWsChar(first) || isWsChar(last)) {
         const [line, col] = this._getCharLocation(this.charPos);
         throw new SluzError(`Whitespace next to delimiter in tag <code>${str}</code> on line #${line}`, 50981);
       }
     } else {
-      // Not a genuine tag — possibly literal text between delimiters. Inner
-      // content containing {, }, or ; is exempted and passed through verbatim,
-      // unless it contains a nested sub-tag ({/, {$ , {if, {foreach, {else,
-      // {literal}). The quote-strip and sub-tag scan are only run when the
-      // inner actually contains such a char. Everything else is subject to
-      // the whitespace rule.
       const inner = str.slice(L.length, str.length - R.length);
       if (/[{};]/.test(inner)) {
         const innerStripped = inner.replace(/'[^']*'|"[^"]*"/g, '');
@@ -502,20 +677,17 @@ export default class Sluz {
       }
     }
 
-    // {$var} or {$var|modifier:param} or {$var|modifier:$param}
     if (str.startsWith(this._varOpen)) {
       const varMatch = str.includes('|')
         ? str.match(this._varReWithPipe)
         : str.match(this._varReSimple);
-      if (varMatch) { return this._variableBlock(varMatch[1]); }
+      if (varMatch) { return this._renderVarInner(varMatch[1], this.auto_escape); }
     }
 
-    // {if condition}...{/if}
     if (str.startsWith(this._ifOpen) && str.endsWith(this._close_if)) {
       return this._ifBlock(str);
     }
 
-    // {foreach $array as $key => $value}...{/foreach}
     if (str.startsWith(this._foreachOpen)) {
       const foreachMatch = str.match(this._foreachRe);
       if (foreachMatch) {
@@ -523,19 +695,16 @@ export default class Sluz {
       }
     }
 
-    // {literal}raw content{/literal} — returned verbatim
     if (str.startsWith(this._literalOpen)) {
       const m = str.match(this._literalRe);
       if (m) return m[1];
     }
 
-    // Fallback: treat anything inside delimiters as an expression
     const exprMatch = str.match(this._catchAllRe2);
     if (exprMatch) {
       return this._expressionBlock(str, exprMatch[1]);
     }
 
-    // No closing delimiter — this is a parse error
     if (!str.endsWith(R)) {
       const [line, col] = this._getCharLocation(this.charPos);
       throw new SluzError(`Unclosed tag <code>${str}</code> on line #${line}`, 45821);
@@ -544,154 +713,276 @@ export default class Sluz {
     return str;
   }
 
+  // Back-compat: old _processBlock(str, charPos) signature.
+  _processBlock(str, charPos) {
+    this.charPos = charPos;
+    return this._processBlockFull(str);
+  }
+
   // -------------------------------------------------------------------
   // Block handlers
   // -------------------------------------------------------------------
 
-  // Resolve {$var} with optional pipe modifiers, dotted paths, and "default:" fallback
-  _variableBlock(str) {
-    if (!str.includes('|')) {
-      const ret = this._arrayDive(str, this.tplVars);
-      if (Array.isArray(ret)) return 'ARRAY';
-      if (ret && typeof ret === 'object') return 'HASH';
-      if (ret != null) return this._esc(ret);
-      return '';
+  // Look up (or build and cache) the modifier plan for a var inner.
+  _getModPlan(inner) {
+    let plan = this._modPlanCache.get(inner);
+    if (plan === undefined) {
+      plan = this._buildModPlan(inner);
+      if (this._modPlanCache.size >= CACHE_LIMIT) this._modPlanCache.clear();
+      this._modPlanCache.set(inner, plan);
+    }
+    return plan;
+  }
+
+  // Render a var inner (`$name`, `$a.b`, `$name|upper`, `$x|default:"hi"`).
+  // The modifier chain is parsed once per unique inner and cached, so a repeat
+  // render only resolves the variable and applies the already-bound modifiers.
+  _renderVarInner(inner, autoEscape) {
+    return this._renderPlan(this._getModPlan(inner), autoEscape);
+  }
+
+  // Apply a pre-parsed modifier plan to the current variable scope.
+  _renderPlan(plan, autoEscape) {
+    // `{$x|}` — nothing after the pipe. The legacy code dove the whole inner
+    // (which includes `$` and `|`) and produced ''. Preserve that.
+    if (plan.emptyPipe) return '';
+
+    let pre = this._divePath(plan.key);
+
+    if (plan.hasDefault) {
+      if (this._isNothing(pre)) {
+        pre = plan.dval;
+      } else {
+        pre = pre ?? '';
+      }
+    } else if (plan.segs.length === 0) {
+      return this._renderScalar(pre, autoEscape);
+    } else if (pre == null) {
+      pre = '';
     }
 
-    const pipeParts = this._splitRespectingQuotes(str, '|');
-    const key = pipeParts[0];
-    const modStr = pipeParts.slice(1).join('|');
+    let seenEscape = false;
+    let seenNoescape = false;
+    for (let s = 0; s < plan.segs.length; s++) {
+      const seg = plan.segs[s];
+      if (seg.isEscape) seenEscape = true;
+      if (seg.isNoescape) seenNoescape = true;
 
-    if (modStr) {
-      const tmp = this._arrayDive(key, this.tplVars);
-      const isDefault = modStr.includes('default:');
-      const isNothing = this._isNothing(tmp);
-
-      // default: behaves like any other modifier — the default value (or the
-      // real value, when present) is the input for the modifiers chained
-      // after it, e.g. {$missing|default:'hello'|upper} -> 'HELLO'.
-      let pre;
-      let mods = modStr;
-      if (isDefault) {
-        // Split the default value (up to the next unquoted |) from any
-        // modifiers chained after it. When the variable is present the
-        // default is never consulted, so only the chained modifiers apply.
-        const afterDefault = modStr.replace(/^.*?default:/, '');
-        const dParts = this._splitRespectingQuotes(afterDefault, '|');
-        const rawDefault = (dParts[0] ?? '').trim();
-
-        // The fallback must be a quoted string literal or a numeric literal.
-        // Anything else (bare words, variables, expressions) is invalid.
-        const q = rawDefault[0];
-        const isQuotedStr = rawDefault.length >= 2 && (q === '"' || q === "'")
-          && rawDefault[rawDefault.length - 1] === q;
-        const isNumeric = !isQuotedStr && NUMERIC_LITERAL_RE.test(rawDefault);
-        if (!isQuotedStr && !isNumeric) {
+      const ps = seg.params;
+      let ret;
+      if (ps.length === 0) {
+        try { ret = seg.fn(pre); } catch (e) {
+          if (e instanceof SluzError) throw e;
           const [line] = this._getCharLocation(this.charPos);
-          throw new SluzError(`Unquoted default value <code>${rawDefault}</code> on line #${line}`, 31558);
+          throw new SluzError(`Exception in modifier <code>${seg.name}</code> on line #${line}`, 79134);
         }
-
-        if (isNothing) {
-          let dval;
-          if (isNumeric) {
-            // Evaluate the already-validated numeric literal directly so forms
-            // like `.5` don't get mangled by the PHP-dot concat conversion.
-            dval = Number(rawDefault);
+      } else {
+        const args = new Array(ps.length + 1);
+        args[0] = pre;
+        for (let k = 0; k < ps.length; k++) {
+          const p = ps[k];
+          if (p.const) {
+            args[k + 1] = p.value;
           } else {
-            let err;
-            try {
-              [dval, err] = this._peval(rawDefault);
-            } catch {
-              err = -1;
-            }
+            const [v, err] = this._pevalSafe(p.src);
             if (err !== 0) {
               const [line] = this._getCharLocation(this.charPos);
-              throw new SluzError(`Invalid default value <code>${rawDefault}</code> on line #${line}`, 31558);
+              throw new SluzError(`Unquoted function parameter <code>${p.src}</code> on line #${line}`, 31558);
             }
-          }
-          pre = dval;
-        } else {
-          pre = tmp ?? '';
-        }
-        mods = dParts.slice(1).join('|');
-      } else {
-        pre = tmp ?? '';
-      }
-
-      let seenEscape = false;
-      let seenNoescape = false;
-      if (mods) {
-        const parts = this._splitRespectingQuotes(mods, '|');
-        for (const p of parts) {
-          const colonIdx = this._findFirstColonOutsideQuotes(p);
-          const func = colonIdx >= 0 ? p.slice(0, colonIdx) : p;
-          const paramStr = colonIdx >= 0 ? p.slice(colonIdx + 1) : '';
-
-          if (func === 'escape') seenEscape = true;
-          if (func === 'noescape') seenNoescape = true;
-
-          const params = [pre];
-
-          if (paramStr.length) {
-            const commaLimbs = this._splitRespectingQuotes(paramStr, ',');
-            for (const limb of commaLimbs) {
-              // Bare identifiers such as `undefined`, `NaN`, or `Math` resolve
-              // to JS globals, but PHP has no such constants — reject them.
-              const bare = limb.trim();
-              if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(bare) && !/^(?:true|false|null)$/.test(bare)) {
-                const [line] = this._getCharLocation(this.charPos);
-                throw new SluzError(`Unquoted function parameter <code>${limb}</code> on line #${line}`, 31558);
-              }
-
-              // A param that fails to evaluate (e.g. bare `abc`, `;`) is an
-              // unquoted non-expression. _peval can also throw SyntaxError
-              // from new Function, so treat that the same way.
-              let v;
-              let err;
-              try {
-                [v, err] = this._peval(limb);
-              } catch {
-                err = -1;
-              }
-              if (err !== 0) {
-                const [line] = this._getCharLocation(this.charPos);
-                throw new SluzError(`Unquoted function parameter <code>${limb}</code> on line #${line}`, 31558);
-              }
-              params.push(v);
-            }
-          }
-
-          const fn = this.modifiers.get(func);
-          if (!fn) {
-            const [line, col] = this._getCharLocation(this.charPos);
-            throw new SluzError(`Unknown function call <code>${func}</code> on line #${line}`, 47204);
-          }
-          try {
-            pre = fn(...params);
-          } catch (e) {
-            if (e instanceof SluzError) throw e;
-            const [line] = this._getCharLocation(this.charPos);
-            throw new SluzError(`Exception in modifier <code>${func}</code> on line #${line}`, 79134);
+            args[k + 1] = v;
           }
         }
+        try { ret = seg.fn.apply(null, args); } catch (e) {
+          if (e instanceof SluzError) throw e;
+          const [line] = this._getCharLocation(this.charPos);
+          throw new SluzError(`Exception in modifier <code>${seg.name}</code> on line #${line}`, 79134);
+        }
       }
-
-      if (pre == null) return '';
-      if (this.auto_escape && !seenNoescape && !seenEscape) {
-        pre = this._esc(pre);
-      }
-      return pre;
+      pre = ret;
     }
 
-    const ret = this._arrayDive(str, this.tplVars);
-    if (Array.isArray(ret)) return 'ARRAY';
-    if (ret && typeof ret === 'object') return 'HASH';
-    if (ret != null) return this._esc(ret);
+    if (pre == null) return '';
+    if (autoEscape && !seenNoescape && !seenEscape) pre = _escapeHtml(pre);
+    return pre;
+  }
+
+  // Parse a var inner into a reusable plan: key, default fallback, and
+  // modifier segments with their parameters pre-resolved where constant.
+  // All static validation (31558 / 47204) happens here, i.e. on first render.
+  _buildModPlan(inner) {
+    let pipeIdx = -1;
+    for (let i = 0; i < inner.length; i++) {
+      if (inner.charCodeAt(i) === 124) { pipeIdx = i; break; } // '|'
+    }
+    if (pipeIdx === -1) {
+      return { key: inner.slice(1), segs: [], hasDefault: false, emptyPipe: false };
+    }
+
+    const key = inner.slice(1, pipeIdx);
+    let modStr = inner.slice(pipeIdx + 1);
+    // Original semantics: an empty remainder after the pipe renders ''.
+    if (modStr.length === 0) {
+      return { key, segs: [], hasDefault: false, emptyPipe: true };
+    }
+
+    const plan = { key, segs: [], hasDefault: false, emptyPipe: false, dval: undefined };
+
+    if (modStr.indexOf('default:') !== -1) {
+      plan.hasDefault = true;
+      // Everything before `default:` is discarded (legacy behaviour).
+      const afterDefault = modStr.replace(/^.*?default:/, '');
+      const dParts = this._splitRespectingQuotes(afterDefault, '|');
+      const rawDefault = (dParts[0] ?? '').trim();
+      const q = rawDefault[0];
+      const isQuotedStr = rawDefault.length >= 2 && (q === '"' || q === "'")
+        && rawDefault[rawDefault.length - 1] === q;
+      const isNumeric = !isQuotedStr && NUMERIC_LITERAL_RE.test(rawDefault);
+      if (!isQuotedStr && !isNumeric) {
+        const [line] = this._getCharLocation(this.charPos);
+        throw new SluzError(`Unquoted default value <code>${rawDefault}</code> on line #${line}`, 31558);
+      }
+      if (isNumeric) {
+        plan.dval = Number(rawDefault);
+      } else {
+        const [dval, err] = this._pevalSafe(rawDefault);
+        if (err !== 0) {
+          const [line] = this._getCharLocation(this.charPos);
+          throw new SluzError(`Invalid default value <code>${rawDefault}</code> on line #${line}`, 31558);
+        }
+        plan.dval = dval;
+      }
+      modStr = dParts.slice(1).join('|');
+    }
+
+    if (!modStr) return plan;
+
+    for (const p of this._splitRespectingQuotes(modStr, '|')) {
+      if (!p) continue;
+      const colonIdx = this._findFirstColonOutsideQuotes(p);
+      const name = colonIdx >= 0 ? p.slice(0, colonIdx) : p;
+      const paramStr = colonIdx >= 0 ? p.slice(colonIdx + 1) : '';
+      const fn = this.modifiers.get(name);
+      if (!fn) {
+        const [line] = this._getCharLocation(this.charPos);
+        throw new SluzError(`Unknown function call <code>${name}</code> on line #${line}`, 47204);
+      }
+      const params = [];
+      if (paramStr.length) {
+        for (const limb of this._splitRespectingQuotes(paramStr, ',')) {
+          const bare = limb.trim();
+          if (isBareIdentifier(bare) && bare !== 'true' && bare !== 'false' && bare !== 'null') {
+            const [line] = this._getCharLocation(this.charPos);
+            throw new SluzError(`Unquoted function parameter <code>${limb}</code> on line #${line}`, 31558);
+          }
+          // Params referencing variables must be re-evaluated per render.
+          if (limb.includes('$')) {
+            params.push({ const: false, src: limb });
+          } else {
+            const [v, err] = this._pevalSafe(limb);
+            if (err !== 0) {
+              const [line] = this._getCharLocation(this.charPos);
+              throw new SluzError(`Unquoted function parameter <code>${limb}</code> on line #${line}`, 31558);
+            }
+            params.push({ const: true, value: v });
+          }
+        }
+      }
+      plan.segs.push({
+        name,
+        fn,
+        params,
+        isEscape: name === 'escape',
+        isNoescape: name === 'noescape',
+      });
+    }
+    return plan;
+  }
+
+  // _peval that never throws (new Function can throw SyntaxError for params
+  // like ";"), so callers can map failures to template error codes.
+  _pevalSafe(str) {
+    try {
+      return this._peval(str);
+    } catch {
+      return [undefined, -1];
+    }
+  }
+
+  _renderScalar(v, autoEscape) {
+    if (Array.isArray(v)) return 'ARRAY';
+    if (v && typeof v === 'object') return 'HASH';
+    if (v != null) return autoEscape ? _escapeHtml(v) : v;
     return '';
   }
 
-  // Evaluate {if}/{elseif}/{else} — fast regex for simple blocks, tokenized for complex
+  // Dotted-path lookup without RegExp, optimal for the common 1-3 part paths.
+  // Direct-key precedence (assign('a.b','direct')) is preserved.
+  _divePath(path) {
+    const tv = this.tplVars;
+    if (Object.prototype.hasOwnProperty.call(tv, path)) return tv[path];
+    let dot = -1;
+    for (let i = 0; i < path.length; i++) {
+      if (path.charCodeAt(i) === 46) { dot = i; break; } // '.'
+    }
+    if (dot === -1) return undefined;
+    let parts = this._pathCache.get(path);
+    if (!parts) {
+      parts = path.split('.');
+      if (this._pathCache.size >= CACHE_LIMIT) this._pathCache.clear();
+      this._pathCache.set(path, parts);
+    }
+    let cur = tv[parts[0]];
+    if (cur === undefined && !Object.prototype.hasOwnProperty.call(tv, parts[0])) {
+      return undefined;
+    }
+    for (let i = 1; i < parts.length; i++) {
+      if (cur == null) return undefined;
+      if (Array.isArray(cur)) {
+        const elem = parts[i];
+        if (!isAllDigits(elem)) return undefined;
+        const idx = Number(elem);
+        if (idx >= cur.length) return undefined;
+        cur = cur[idx];
+      } else if (typeof cur === 'object') {
+        if (!Object.prototype.hasOwnProperty.call(cur, parts[i])) return undefined;
+        cur = cur[parts[i]];
+      } else {
+        return undefined;
+      }
+    }
+    return cur;
+  }
+
+  // Evaluate {if}/{elseif}/{else} — fast regex for simple blocks, tokenized for complex.
+  // Parsed rules (condition + payload) are cached per block, and the selected
+  // branch's blocks are tagged lazily on first use, so an unselected malformed
+  // branch stays unparsed (matching the original lazy behaviour).
   _ifBlock(str) {
+    let rules = this._ifRuleCache.get(str);
+    if (rules === undefined) {
+      rules = this._parseIfRules(str);
+      if (this._ifRuleCache.size >= CACHE_LIMIT) this._ifRuleCache.clear();
+      this._ifRuleCache.set(str, rules);
+    }
+
+    let ret = '';
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i];
+      const [res] = this._peval(rule[0]);
+      if (res) {
+        let tagged = rule[1];
+        if (tagged === null) {
+          tagged = rule[1] = this._makeTagged(this._getBlocks(rule[2]));
+        }
+        ret += this._processBlocksTagged(tagged);
+        break;
+      }
+    }
+    return ret;
+  }
+
+  // Split an if-block into [condition, taggedBlocks|null, payload] rules.
+  _parseIfRules(str) {
     // True when the block has no else or elseif, so we can use a simple regex.
     // elseifs must route through the tokenizer too, or an {elseif} without a
     // matching {else} would be mistaken for literal payload text.
@@ -709,22 +1000,18 @@ export default class Sluz {
       rules = this._ifRulesFromTokens(toks);
     }
 
-    let ret = '';
-    for (const [cond, payload] of rules) {
-      const [res] = this._peval(cond);
-      if (res) {
-        const inBlocks = this._getBlocks(payload);
-        ret += this._processBlocks(inBlocks);
-        break;
-      }
+    const out = new Array(rules.length);
+    for (let i = 0; i < rules.length; i++) {
+      out[i] = [rules[i][0], null, rules[i][1]];
     }
-    return ret;
+    return out;
   }
 
   // Process {foreach $arr as $k => $v}...{/foreach} with __FOREACH_FIRST/LAST/INDEX
   _foreachBlock(srcExpr, keyVar, valVar, payload) {
     payload = this._ltrimOne(payload, '\n');
-    const blocks = this._getBlocks(payload);
+    // Tag the payload once, before the loop — not per iteration.
+    const blocks = this._makeTagged(this._getBlocks(payload));
 
     const [src] = this._peval(srcExpr);
 
@@ -736,6 +1023,12 @@ export default class Sluz {
     } else {
       iterable = [src];
     }
+
+    // Only maintain __FOREACH_* when the payload actually references them;
+    // otherwise skip 6 writes per iteration (the common case).
+    const usesFirst = payload.includes('__FOREACH_FIRST');
+    const usesLast = payload.includes('__FOREACH_LAST');
+    const usesIndex = payload.includes('__FOREACH_INDEX');
 
     // Save only the loop-local keys we're about to overwrite instead of
     // shallow-cloning the entire tplVars scope on every foreach call. We
@@ -760,30 +1053,29 @@ export default class Sluz {
     const savedSKey = this.__S[sKey];
     const savedSVal = sVal !== null ? this.__S[sVal] : undefined;
 
+    const tv = this.tplVars;
+    const S = this.__S;
+    const hasVal = sVal !== null;
     let ret = '';
     let idx = 0;
 
     if (Array.isArray(iterable)) {
       const last = iterable.length - 1;
       for (let i = 0; i <= last; i++) {
-        const first = idx === 0 ? 1 : 0;
-        const isLast = idx === last ? 1 : 0;
-        this.tplVars.__FOREACH_FIRST = first;
-        this.tplVars.__FOREACH_LAST = isLast;
-        this.tplVars.__FOREACH_INDEX = idx;
-        this.__S[sFirst] = first;
-        this.__S[sLast] = isLast;
-        this.__S[sIndex] = idx;
-        if (sVal !== null) {
-          this.tplVars[keyVar] = i;
-          this.tplVars[valVar] = iterable[i];
-          this.__S[sKey] = i;
-          this.__S[sVal] = iterable[i];
+        const val = iterable[i];
+        if (usesFirst) { const f = idx === 0 ? 1 : 0; tv.__FOREACH_FIRST = f; S[sFirst] = f; }
+        if (usesLast) { const l = idx === last ? 1 : 0; tv.__FOREACH_LAST = l; S[sLast] = l; }
+        if (usesIndex) { tv.__FOREACH_INDEX = idx; S[sIndex] = idx; }
+        if (hasVal) {
+          tv[keyVar] = i;
+          tv[valVar] = val;
+          S[sKey] = i;
+          S[sVal] = val;
         } else {
-          this.tplVars[keyVar] = iterable[i];
-          this.__S[sKey] = iterable[i];
+          tv[keyVar] = val;
+          S[sKey] = val;
         }
-        ret += this._processBlocks(blocks);
+        ret += this._processBlocksTagged(blocks);
         idx++;
       }
     } else if (typeof iterable === 'object' && iterable !== null) {
@@ -791,24 +1083,20 @@ export default class Sluz {
       const last = keys.length - 1;
       for (let i = 0; i <= last; i++) {
         const k = keys[i];
-        const first = idx === 0 ? 1 : 0;
-        const isLast = idx === last ? 1 : 0;
-        this.tplVars.__FOREACH_FIRST = first;
-        this.tplVars.__FOREACH_LAST = isLast;
-        this.tplVars.__FOREACH_INDEX = idx;
-        this.__S[sFirst] = first;
-        this.__S[sLast] = isLast;
-        this.__S[sIndex] = idx;
-        if (sVal !== null) {
-          this.tplVars[keyVar] = k;
-          this.tplVars[valVar] = iterable[k];
-          this.__S[sKey] = k;
-          this.__S[sVal] = iterable[k];
+        const val = iterable[k];
+        if (usesFirst) { const f = idx === 0 ? 1 : 0; tv.__FOREACH_FIRST = f; S[sFirst] = f; }
+        if (usesLast) { const l = idx === last ? 1 : 0; tv.__FOREACH_LAST = l; S[sLast] = l; }
+        if (usesIndex) { tv.__FOREACH_INDEX = idx; S[sIndex] = idx; }
+        if (hasVal) {
+          tv[keyVar] = k;
+          tv[valVar] = val;
+          S[sKey] = k;
+          S[sVal] = val;
         } else {
-          this.tplVars[keyVar] = iterable[k];
-          this.__S[sKey] = iterable[k];
+          tv[keyVar] = val;
+          S[sKey] = val;
         }
-        ret += this._processBlocks(blocks);
+        ret += this._processBlocksTagged(blocks);
         idx++;
       }
     }
@@ -879,17 +1167,24 @@ export default class Sluz {
       }
 
       // $var or $var.path -> __S.scope lookup (dots inside are property access)
-      if (ch === '$' && /\w/.test(next)) {
-        const m = str.slice(i).match(/^\$\w[\w.]*/);
-        const tok = m[0];
+      if (ch === '$' && next && isWordChar(next.charCodeAt(0))) {
+        let j = i + 1;
+        while (j < n && isWordChar(str.charCodeAt(j))) j++;
+        while (j < n && str.charCodeAt(j) === 46) { // '.'
+          let k = j + 1;
+          while (k < n && isWordChar(str.charCodeAt(k))) k++;
+          if (k === j + 1) break; // trailing dot — stop path here
+          j = k;
+        }
+        const tok = str.slice(i, j);
         const parts = tok.slice(1).split('.');
         const first = parts.shift();
         let res = `__S.sluz_pfx_${first}`;
         for (const p of parts) {
-          res += /^\d+$/.test(p) ? `[${p}]` : `.${p}`;
+          res += isAllDigits(p) ? `[${p}]` : `.${p}`;
         }
         out += res;
-        i += tok.length;
+        i = j;
         continue;
       }
 
@@ -897,7 +1192,9 @@ export default class Sluz {
       // property access (foo.bar, arr[0].bar) or a decimal literal (1.5)
       if (ch === '.') {
         const prev = i > 0 ? str[i - 1] : ' ';
-        const isProperty = /\w/.test(next) && (/\w/.test(prev) || prev === ']' || prev === ')');
+        const nextIsWord = next && isWordChar(next.charCodeAt(0));
+        const prevIsWord = prev && prev !== undefined && isWordChar(prev.charCodeAt(0));
+        const isProperty = nextIsWord && (prevIsWord || prev === ']' || prev === ')');
         if (!isProperty) {
           out += '+';
           i++;
@@ -922,11 +1219,25 @@ export default class Sluz {
 
   // Fast-path resolution for literals, quoted strings, and simple var refs (avoids Function)
   _microOptimize(str) {
-    if (/^-?\d+(?:\.\d+)?$/.test(str)) return str;
+    if (isNumericLiteralMicro(str)) return str;
     if (!str.length) return undefined;
 
     const first = str[0];
     const last = str[str.length - 1];
+
+    // $name or $a.b — direct scope lookup, no Function() and no arg spread.
+    // This is the dominant shape for {if $flag} and foreach bodies.
+    if (first === '$') {
+      if (isSimpleVarInner(str)) return this._divePath(str.slice(1));
+      return undefined;
+    }
+
+    // !$name / !$a.b
+    if (first === '!') {
+      const inner = str.slice(1);
+      if (isSimpleVarInner(inner)) return !this._divePath(inner.slice(1));
+      return undefined;
+    }
 
     if (first === "'" && last === "'") {
       const tmp = str.slice(1, -1);
@@ -938,13 +1249,8 @@ export default class Sluz {
       if (!tmp.includes('$') && !tmp.includes('"')) return tmp;
     }
 
-    if (/^\w+$/.test(str) && Object.prototype.hasOwnProperty.call(this.tplVars, str)) {
+    if (isWordRune(str) && Object.prototype.hasOwnProperty.call(this.tplVars, str)) {
       return this.tplVars[str];
-    }
-
-    const bareNot = str.match(/^!(\w+)$/);
-    if (bareNot && Object.prototype.hasOwnProperty.call(this.tplVars, bareNot[1])) {
-      return !this.tplVars[bareNot[1]];
     }
 
     return undefined;
@@ -1016,38 +1322,6 @@ export default class Sluz {
   // -------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------
-
-  // Walk a dotted path into nested objects/arrays (e.g. "user.profile.name")
-  _arrayDive(needle, haystack) {
-    if (needle == null || haystack == null) return undefined;
-
-    if (Object.prototype.hasOwnProperty.call(haystack, needle)) {
-      return haystack[needle];
-    }
-    if (!needle.includes('.')) return undefined;
-
-    let parts = this._pathCache.get(needle);
-    if (!parts) {
-      parts = needle.split('.');
-      if (this._pathCache.size >= CACHE_LIMIT) this._pathCache.clear();
-      this._pathCache.set(needle, parts);
-    }
-    let arr = haystack;
-
-    for (const elem of parts) {
-      if (arr == null) return undefined;
-      if (Array.isArray(arr)) {
-        if (!/^\d+$/.test(elem) || elem >= arr.length) return undefined;
-        arr = arr[elem];
-      } else if (typeof arr === 'object') {
-        if (!Object.prototype.hasOwnProperty.call(arr, elem)) return undefined;
-        arr = arr[elem];
-      } else {
-        return undefined;
-      }
-    }
-    return arr;
-  }
 
   // Strip a single leading character if it matches the given character
   _ltrimOne(str, char) {
@@ -1154,8 +1428,13 @@ export default class Sluz {
   // Quote-aware splitting
   // -------------------------------------------------------------------
 
-  // Split by delimiter, respecting single/double-quoted substrings
+  // Split by delimiter, respecting single/double-quoted substrings.
+  // Fast path: when the string has no quotes at all, plain split wins
+  // (the overwhelmingly common case for modifier chains and param lists).
   _splitRespectingQuotes(str, delimiter) {
+    if (!str.includes("'") && !str.includes('"')) {
+      return str.split(delimiter);
+    }
     const parts = [];
     let current = '';
     let inQuote = null;
@@ -1201,6 +1480,7 @@ export default class Sluz {
   _isNothing(v) {
     if (v === undefined || v === null) return true;
     if (typeof v === 'object') return false;
+    if (typeof v === 'string') return v.length === 0;
     return String(v).length === 0 && v !== '0';
   }
 
